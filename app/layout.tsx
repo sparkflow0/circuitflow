@@ -1,8 +1,13 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Tajawal } from "next/font/google";
 import "./globals.css";
+import { LanguageProvider } from "@/lib/LanguageContext";
 
-const inter = Inter({ subsets: ["latin"] });
+const tajawal = Tajawal({ 
+  subsets: ["arabic", "latin"], 
+  weight: ["200", "300", "400", "500", "700", "800", "900"],
+  variable: '--font-tajawal'
+});
 
 export const metadata: Metadata = {
   title: "Arduino Education Platform",
@@ -15,8 +20,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className={inter.className}>{children}</body>
+    <html lang="ar" dir="rtl">
+      <body className={`${tajawal.className} antialiased`}>
+        <LanguageProvider>
+            {children}
+        </LanguageProvider>
+      </body>
     </html>
   );
 }
