@@ -8,19 +8,19 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   isLoading?: boolean;
 }
 
-export const Button: React.FC<ButtonProps> = ({ 
-  className, 
-  variant = 'primary', 
-  size = 'md', 
-  isLoading, 
-  children, 
-  ...props 
+export const Button: React.FC<ButtonProps> = ({
+  className,
+  variant = 'primary',
+  size = 'md',
+  isLoading,
+  children,
+  ...props
 }) => {
   const variants = {
-    primary: 'bg-blue-600 text-white hover:bg-blue-700',
-    secondary: 'bg-slate-800 text-white hover:bg-slate-700',
-    outline: 'border border-slate-300 bg-transparent hover:bg-slate-100 text-slate-900',
-    ghost: 'bg-transparent hover:bg-slate-100 text-slate-700',
+    primary: 'bg-gradient-to-r from-blue-600 to-blue-500 text-white hover:from-blue-500 hover:to-blue-400 shadow-lg shadow-blue-900/30',
+    secondary: 'bg-[#25252b] text-white hover:bg-[#2f2f37] border border-gray-700',
+    outline: 'border border-gray-700 bg-transparent text-gray-100 hover:bg-[#1f1f25]',
+    ghost: 'bg-transparent text-gray-300 hover:bg-[#1f1f25]',
   };
 
   const sizes = {
