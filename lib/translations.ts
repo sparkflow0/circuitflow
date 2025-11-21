@@ -7,7 +7,7 @@ export const translations = {
     brand: 'Circuit Flow',
     courses: 'الدورات',
     store: 'المتجر',
-    blog: 'المدونة',
+    blog: 'الشروحات',
     simulator: 'المحاكي',
     dashboard: 'لوحة التحكم',
     signin: 'تسجيل الدخول',
