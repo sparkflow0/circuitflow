@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, FormEvent } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   ArrowLeft,
   ArrowRight,
@@ -244,6 +245,8 @@ type ExperienceProps = {
 };
 
 export default function HomeExperience({ courses, blogs, products }: ExperienceProps) {
+  const router = useRouter();
+
   const [activeTab, setActiveTab] = useState<'dashboard' | 'learn' | 'community' | 'shop'>('dashboard');
   const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
   const [selectedBlogId, setSelectedBlogId] = useState<number | null>(null);
@@ -522,7 +525,10 @@ export default function HomeExperience({ courses, blogs, products }: ExperienceP
             <h2 className="text-3xl font-bold mb-2">مرحباً بعودتك!</h2>
             <p className="text-blue-100 mb-6 max-w-md">ابدأ مشروعك التالي أو عد إلى الدروس التي تتابعها.</p>
             <div className="flex flex-wrap gap-3">
-              <button className="bg-white text-blue-600 px-6 py-2.5 rounded-lg font-bold hover:bg-blue-50 transition-colors flex items-center gap-2 shadow-lg">
+              <button
+                onClick={() => router.push('/simulator')}
+                className="bg-white text-blue-600 px-6 py-2.5 rounded-lg font-bold hover:bg-blue-50 transition-colors flex items-center gap-2 shadow-lg"
+              >
                 <Zap size={18} /> افتح المحاكي
               </button>
               <button className="bg-blue-800/50 text-white border border-blue-400/30 px-6 py-2.5 rounded-lg font-bold hover:bg-blue-800 transition-colors backdrop-blur-sm">
