@@ -103,7 +103,7 @@ const Card = ({
   meta: React.ReactNode;
   imageColor?: string;
   imageUrl?: string | null;
-  icon?: React.ComponentType<{ size?: number }>;
+  icon?: React.ComponentType<{ size?: number | string }>;
   onClick?: () => void;
 }) => (
   <div
@@ -270,7 +270,6 @@ export default function HomeExperience({ courses, blogs, products }: ExperienceP
   const normalizedBlogs = blogs.map((blog) => ({
     ...blog,
     author: blog.author ?? 'فريق CircuitFlow',
-    read_time: blog.read_time ?? '5 دقائق',
     category: blog.category ?? 'تعليمي',
     cover_image: blog.cover_image ?? undefined,
     content: blog.content ?? blog.excerpt ?? '',
