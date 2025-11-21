@@ -14,8 +14,13 @@ drop table if exists public.blog_posts cascade;
 drop table if exists public.product_purchases cascade;
 drop table if exists public.products cascade;
 drop table if exists public.course_enrollments cascade;
+drop table if exists public.quiz_questions cascade;
 drop table if exists public.lessons cascade;
+drop table if exists public.course_modules cascade;
+drop table if exists public.certificates cascade;
+drop table if exists public.user_progress cascade;
 drop table if exists public.courses cascade;
+drop table if exists public.components cascade;
 drop table if exists public.profiles cascade;
 
 /* ####################################################################
@@ -42,9 +47,20 @@ create table public.courses (
   slug text unique not null,
   short_description text,
   full_description text,
+  cover_image text,
+  banner_image text,
   level text check (level in ('Beginner', 'Intermediate', 'Advanced')),
   price integer default 0, -- in cents
   is_published boolean default false,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- 3. COURSE MODULES
+create table public.course_modules (
+  id uuid default uuid_generate_v4() primary key,
+  course_id uuid references public.courses(id) on delete cascade not null,
+  title text not null,
+  order_index integer default 0,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
@@ -52,6 +68,7 @@ create table public.courses (
 create table public.lessons (
   id uuid default uuid_generate_v4() primary key,
   course_id uuid references public.courses(id) on delete cascade not null,
+  module_id uuid references public.course_modules(id) on delete cascade,
   title text not null,
   slug text not null,
   content text, -- markdown
@@ -79,6 +96,7 @@ create table public.products (
   slug text unique not null,
   description text,
   price integer not null, -- in cents
+  variants jsonb default '[]'::jsonb,
   file_url text, -- Secure download link
   is_published boolean default false,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
@@ -99,6 +117,7 @@ create table public.blog_posts (
   title text not null,
   slug text unique not null,
   excerpt text,
+  cover_image text,
   content text,
   published_at timestamp with time zone,
   is_published boolean default false,
@@ -117,6 +136,52 @@ create table public.saved_circuits (
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
+-- 9. COMPONENT LIBRARY
+create table public.components (
+  id uuid default uuid_generate_v4() primary key,
+  name text not null,
+  type text not null unique,
+  slug text not null unique,
+  category text,
+  image_url text,
+  width integer not null,
+  height integer not null,
+  pins jsonb not null default '[]'::jsonb,
+  animations jsonb not null default '[]'::jsonb,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- 10. QUIZ QUESTIONS
+create table public.quiz_questions (
+  id uuid default uuid_generate_v4() primary key,
+  lesson_id uuid references public.lessons(id) on delete cascade not null,
+  question text not null,
+  options jsonb not null default '[]'::jsonb,
+  correct_index integer not null default 0,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- 11. USER PROGRESS
+create table public.user_progress (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  course_id uuid references public.courses(id) on delete cascade not null,
+  lesson_id uuid references public.lessons(id) on delete cascade,
+  progress integer default 0,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- 12. CERTIFICATES
+create table public.certificates (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  course_id uuid references public.courses(id) on delete cascade not null,
+  issued_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
 -- RLS POLICIES ------------------------------------------
 
 alter table profiles enable row level security;
@@ -127,6 +192,7 @@ alter table products enable row level security;
 alter table product_purchases enable row level security;
 alter table blog_posts enable row level security;
 alter table saved_circuits enable row level security;
+alter table components enable row level security;
 
 -- Profiles: Users read own, Admins read all
 create policy "Public profiles are viewable by everyone" on profiles for select using (true);
@@ -144,6 +210,18 @@ create policy "Users see own purchases" on product_purchases for select using (a
 -- Saved Circuits: Users manage their own
 create policy "Users manage own circuits" on saved_circuits for all using (auth.uid() = user_id);
 
+-- Component Library: Public read, admins manage
+create policy "Public read components" on components for select using (true);
+create policy "Admins insert components" on components for insert with check (
+  exists(select 1 from profiles p where p.id = auth.uid() and p.role = 'admin')
+);
+create policy "Admins update components" on components for update using (
+  exists(select 1 from profiles p where p.id = auth.uid() and p.role = 'admin')
+);
+create policy "Admins delete components" on components for delete using (
+  exists(select 1 from profiles p where p.id = auth.uid() and p.role = 'admin')
+);
+
 -- Lessons: Complex logic (simplified here)
 -- In production, you'd use a function to check enrollment, but for now we allow read if is_free_preview OR valid enrollment exists
 create policy "Read lessons" on lessons for select using (
@@ -157,8 +235,8 @@ create policy "Read lessons" on lessons for select using (
 create or replace function public.handle_new_user() 
 returns trigger as $$
 begin
-  insert into public.profiles (id, email, display_name)
-  values (new.id, new.email, new.raw_user_meta_data->>'full_name');
+  insert into public.profiles (id, email, display_name, role)
+  values (new.id, new.email, new.raw_user_meta_data->>'full_name', 'user');
   return new;
 end;
 $$ language plpgsql security definer;

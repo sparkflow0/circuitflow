@@ -159,3 +159,51 @@ export async function deleteBlogPost(id: string) {
   await supabase.from('blog_posts').delete().eq('id', id)
   revalidatePath('/admin/blog')
 }
+
+// --- COMPONENTS ---
+export async function upsertComponent(formData: FormData) {
+  const supabase = await getAdminClient();
+  const id = formData.get('id') as string;
+
+  const pinsRaw = formData.get('pins') as string;
+  const animationsRaw = formData.get('animations') as string;
+  const metadataRaw = formData.get('metadata') as string;
+
+  let pins: any[] = [];
+  let animations: any[] = [];
+  let metadata: Record<string, any> = {};
+
+  try { pins = pinsRaw ? JSON.parse(pinsRaw) : []; } catch (e) { throw new Error('Pins must be valid JSON array'); }
+  try { animations = animationsRaw ? JSON.parse(animationsRaw) : []; } catch (e) { throw new Error('Animations must be valid JSON array'); }
+  try { metadata = metadataRaw ? JSON.parse(metadataRaw) : {}; } catch (e) { throw new Error('Metadata must be valid JSON'); }
+
+  const data = {
+    name: formData.get('name'),
+    type: (formData.get('type') as string)?.toUpperCase(),
+    slug: formData.get('slug'),
+    category: formData.get('category'),
+    image_url: formData.get('image_url'),
+    width: Number(formData.get('width')),
+    height: Number(formData.get('height')),
+    pins,
+    animations,
+    metadata,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (id) {
+    await supabase.from('components').update(data).eq('id', id);
+  } else {
+    await supabase.from('components').insert(data);
+  }
+
+  revalidatePath('/admin/components');
+  revalidatePath('/simulator');
+  redirect('/admin/components');
+}
+
+export async function deleteComponent(id: string) {
+  const supabase = await getAdminClient();
+  await supabase.from('components').delete().eq('id', id);
+  revalidatePath('/admin/components');
+}

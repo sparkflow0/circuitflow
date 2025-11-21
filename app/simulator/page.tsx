@@ -63,31 +63,47 @@ const cleanMermaid = (str: string) => {
 
 // --- HELPER: Normalize Pin IDs ---
 const normalizePin = (componentType: string, pinId: string) => {
-    if (!pinId) return "";
-    const p = pinId.toString().toUpperCase().replace(/\s/g, '');
-    
-    if (componentType === 'ARDUINO') {
-        const dMatch = p.match(/^D(\d+)$/i);
-        if (dMatch) return dMatch[1];
-        if (p === 'GND') return 'GND_1';
-        if (p === 'VIN') return '5V';
-        if (p === '5V') return '5V';
-        if (p === '3.3V') return '3.3V';
-    }
-    
-    if (p === 'VCC' || p === 'POS' || p === '+') return 'VCC';
-    if (p === 'GND' || p === 'NEG' || p === '-') return 'GND';
-    if (p === 'SIG' || p === 'PWM') return 'SIG';
-    if (p === 'ANODE') return 'anode';
-    if (p === 'CATHODE') return 'cathode';
-    if (p === '1' || p === 'T1') return 't1';
-    if (p === '2' || p === 'T2') return 't2';
-    if (p === '1A') return '1a';
-    if (p === '1B') return '1b';
-    if (p === '2A') return '2a';
-    if (p === '2B') return '2b';
-    
-    return pinId;
+  if (!pinId) return '';
+  const p = pinId.toString().toUpperCase().replace(/\s/g, '');
+
+  if (componentType === 'ARDUINO') {
+    const dMatch = p.match(/^D?(\d+)$/i);
+    if (dMatch) return dMatch[1];
+
+    const analogMatch = p.match(/^A(\d)$/i);
+    if (analogMatch) return `A${analogMatch[1]}`;
+
+    const powerMap: Record<string, string> = {
+      'GND': 'GND1',
+      'GND1': 'GND1',
+      'GND2': 'GND2',
+      'GND3': 'GND3',
+      'GND_TOP': 'GND1',
+      'VIN': 'VIN',
+      '5V': '5V',
+      '3.3V': '3.3V',
+      'IOREF': 'IOREF',
+      'RESET': 'RESET',
+      'AREF': 'AREF',
+      'SDA': 'SDA',
+      'SCL': 'SCL',
+    };
+    if (powerMap[p]) return powerMap[p];
+  }
+
+  if (p === 'VCC' || p === 'POS' || p === '+') return 'VCC';
+  if (p === 'GND' || p === 'NEG' || p === '-') return 'GND';
+  if (p === 'SIG' || p === 'PWM') return 'SIG';
+  if (p === 'ANODE') return 'anode';
+  if (p === 'CATHODE') return 'cathode';
+  if (p === '1' || p === 'T1') return 't1';
+  if (p === '2' || p === 'T2') return 't2';
+  if (p === '1A') return '1a';
+  if (p === '1B') return '1b';
+  if (p === '2A') return '2a';
+  if (p === '2B') return '2b';
+
+  return pinId;
 };
 
 // --- HELPER: Get Wire Color ---
@@ -98,34 +114,25 @@ const getWireColor = (startPin: string, endPin: string) => {
     return '#10B981'; // Default Green
 };
 
-// Component Library
-const COMPONENT_TYPES: any = {
-  ARDUINO: {
-    type: 'ARDUINO', name: 'Arduino Uno', width: 200, height: 280,
-    pins: [
-      { id: 'GND_1', x: 60, y: 265, label: 'GND' }, { id: '5V', x: 45, y: 265, label: '5V' },
-      { id: '3.3V', x: 30, y: 265, label: '3.3V' }, { id: '13', x: 35, y: 15, label: '13' },
-      { id: '12', x: 50, y: 15, label: '12' }, { id: '11', x: 65, y: 15, label: '11' },
-      { id: '10', x: 80, y: 15, label: '10' }, { id: '9', x: 95, y: 15, label: '9' },
-      { id: '8', x: 110, y: 15, label: '8' }, { id: '7', x: 125, y: 15, label: '7' },
-      { id: '6', x: 140, y: 15, label: '6' }, { id: '5', x: 155, y: 15, label: '5' },
-      { id: '4', x: 170, y: 15, label: '4' }, { id: '3', x: 185, y: 15, label: '3' },
-      { id: '2', x: 200, y: 15, label: '2' }, { id: 'A0', x: 130, y: 265, label: 'A0' },
-      { id: 'A1', x: 145, y: 265, label: 'A1' },
-    ]
-  },
-  ESP32: { type: 'ESP32', name: 'ESP32', width: 140, height: 240, pins: [{ id: 'GND', x: 15, y: 225 }, { id: 'VIN', x: 15, y: 210 }, { id: 'D2', x: 125, y: 45 }] },
-  LED: { type: 'LED', name: 'LED', width: 30, height: 60, pins: [{ id: 'anode', x: 22, y: 55 }, { id: 'cathode', x: 8, y: 55 }] },
-  RGB_LED: { type: 'RGB_LED', name: 'RGB LED', width: 40, height: 60, pins: [{ id: 'R', x: 5, y: 55 }, { id: 'cathode', x: 15, y: 55 }, { id: 'G', x: 25, y: 55 }, { id: 'B', x: 35, y: 55 }] },
-  RESISTOR: { type: 'RESISTOR', name: 'Resistor', width: 80, height: 20, pins: [{ id: 't1', x: 5, y: 10 }, { id: 't2', x: 75, y: 10 }] },
-  BUTTON: { type: 'BUTTON', name: 'Button', width: 50, height: 50, pins: [{ id: '1a', x: 5, y: 5 }, { id: '1b', x: 5, y: 45 }, { id: '2a', x: 45, y: 5 }, { id: '2b', x: 45, y: 45 }] },
-  SERVO: { type: 'SERVO', name: 'Servo', width: 80, height: 100, pins: [{ id: 'GND', x: 20, y: 95 }, { id: 'VCC', x: 40, y: 95 }, { id: 'SIG', x: 60, y: 95 }] },
-  MOTOR: { type: 'MOTOR', name: 'DC Motor', width: 80, height: 80, pins: [{ id: 'pos', x: 10, y: 70 }, { id: 'neg', x: 70, y: 70 }] },
-  BUZZER: { type: 'BUZZER', name: 'Buzzer', width: 50, height: 50, pins: [{ id: 'pos', x: 10, y: 45 }, { id: 'neg', x: 40, y: 45 }] },
-  POT: { type: 'POT', name: 'Potentiometer', width: 60, height: 60, pins: [{ id: 'GND', x: 10, y: 55 }, { id: 'SIG', x: 30, y: 55 }, { id: 'VCC', x: 50, y: 55 }] },
-  LDR: { type: 'LDR', name: 'Photoresistor', width: 50, height: 50, pins: [{ id: 't1', x: 10, y: 45 }, { id: 't2', x: 40, y: 45 }] },
-  ULTRASONIC: { type: 'ULTRASONIC', name: 'Ultrasonic', width: 100, height: 50, pins: [{ id: 'VCC', x: 10, y: 45 }, { id: 'TRIG', x: 35, y: 45 }, { id: 'ECHO', x: 65, y: 45 }, { id: 'GND', x: 90, y: 45 }] },
-  SEVEN_SEG: { type: 'SEVEN_SEG', name: '7-Segment', width: 70, height: 90, pins: [{ id: 'e', x: 10, y: 85 }, { id: 'd', x: 20, y: 85 }, { id: 'com', x: 35, y: 85 }, { id: 'c', x: 50, y: 85 }, { id: 'dp', x: 60, y: 85 }, { id: 'b', x: 60, y: 5 }, { id: 'a', x: 50, y: 5 }, { id: 'com2', x: 35, y: 5 }, { id: 'f', x: 20, y: 5 }, { id: 'g', x: 10, y: 5 }] }
+type ComponentPin = {
+  id: string;
+  label?: string | null;
+  x: number;
+  y: number;
+  voltage?: string | null;
+};
+
+type ComponentDefinition = {
+  id: string;
+  name: string;
+  type: string;
+  slug: string;
+  category?: string | null;
+  image_url?: string | null;
+  width: number;
+  height: number;
+  pins: ComponentPin[];
+  metadata?: Record<string, any>;
 };
 
 const INITIAL_CODE = `void setup() {
@@ -210,6 +217,10 @@ export default function ReactCircuitPro() {
   const [showGrid, setShowGrid] = useState(true);
   const [darkMode, setDarkMode] = useState(true); 
 
+  const [componentLibrary, setComponentLibrary] = useState<Record<string, ComponentDefinition>>({});
+  const [libraryLoading, setLibraryLoading] = useState(true);
+  const [libraryError, setLibraryError] = useState<string | null>(null);
+
   const [components, setComponents] = useState<any[]>([]);
   const [wires, setWires] = useState<any[]>([]);
   const [code, setCode] = useState(INITIAL_CODE);
@@ -219,6 +230,7 @@ export default function ReactCircuitPro() {
   const [draggedComponent, setDraggedComponent] = useState<any>(null);
   const [wireStart, setWireStart] = useState<any>(null);
   const [selectedWireId, setSelectedWireId] = useState<string | null>(null);
+  const [wireColorPickerOpen, setWireColorPickerOpen] = useState(false);
   const [selectedCompIds, setSelectedCompIds] = useState<string[]>([]);
   const [selectionRect, setSelectionRect] = useState<{x:number, y:number, w:number, h:number} | null>(null);
   const [dragWireSegment, setDragWireSegment] = useState<{wireId: string, axis: 'x'|'y', initialVal: number, mouseStart: number} | null>(null);
@@ -233,6 +245,7 @@ export default function ReactCircuitPro() {
   const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
   
   const simulationRef = useRef({ active: false, pinStates: {} as Record<string, any>, servoAngles: {}, potValues: {} });
+  const prevPinPowerRef = useRef<Record<string, Record<string, boolean>>>({});
   const logsEndRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const speechRef = useRef<SpeechSynthesis | null>(null);
@@ -260,6 +273,30 @@ export default function ReactCircuitPro() {
       return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedWireId, selectedCompIds]);
 
+  useEffect(() => {
+    const fetchComponents = async () => {
+      try {
+        const res = await fetch('/api/components');
+        if (!res.ok) throw new Error('Failed to load component library');
+        const payload = await res.json();
+        const defs = Array.isArray(payload.components) ? payload.components : [];
+        const mapped = defs.reduce((acc: Record<string, ComponentDefinition>, item: ComponentDefinition) => {
+          if (!item?.type) return acc;
+          const key = item.type.toUpperCase();
+          acc[key] = { ...item, type: key, pins: Array.isArray(item.pins) ? item.pins : [] };
+          return acc;
+        }, {});
+        setComponentLibrary(mapped);
+      } catch (err: any) {
+        setLibraryError(err?.message || 'Unable to load components');
+      } finally {
+        setLibraryLoading(false);
+      }
+    };
+
+    fetchComponents();
+  }, []);
+
   // --- VIEW HELPERS ---
   const toWorld = (screenX: number, screenY: number) => {
       const rect = canvasRef.current?.getBoundingClientRect();
@@ -267,11 +304,21 @@ export default function ReactCircuitPro() {
       return { x: (screenX - rect.left - view.x) / view.scale, y: (screenY - rect.top - view.y) / view.scale };
   };
 
+  const getComponentDef = (typeKey: string) => {
+    const key = typeKey?.toUpperCase?.() ?? typeKey;
+    return componentLibrary[key] ?? null;
+  };
+
+  const getComponentDimensions = (typeKey: string) => {
+    const def = getComponentDef(typeKey);
+    return { width: def?.width ?? 60, height: def?.height ?? 40 };
+  };
+
   // --- ACTIONS ---
 
   const addComponent = (typeKey: string) => {
-    // @ts-ignore
-    const template = COMPONENT_TYPES[typeKey];
+    const template = getComponentDef(typeKey);
+    if (!template) return;
     const centerX = (-view.x + (canvasRef.current?.clientWidth || 800)/2) / view.scale;
     const centerY = (-view.y + (canvasRef.current?.clientHeight || 600)/2) / view.scale;
 
@@ -281,7 +328,7 @@ export default function ReactCircuitPro() {
       x: centerX - (template.width/2),
       y: centerY - (template.height/2),
       rotation: 0,
-      state: { angle: 0, value: 0, r: 0, g: 0, b: 0, segments: {} }
+      state: { angle: 0, value: 0, r: 0, g: 0, b: 0, segments: {}, animationValue: null }
     };
     setComponents([...components, newComponent]);
   };
@@ -327,7 +374,6 @@ export default function ReactCircuitPro() {
           setLastMousePos({ x: e.clientX, y: e.clientY }); 
           return; 
       }
-      if (e.target !== e.currentTarget && (e.target as any).tagName !== 'svg') return;
       setIsMouseDownOnCanvas(true);
       const worldPos = toWorld(e.clientX, e.clientY);
       setSelectionStartPoint(worldPos);
@@ -433,14 +479,13 @@ export default function ReactCircuitPro() {
 
       if (isMouseDownOnCanvas && selectionRect) {
           const selected = components.filter(c => {
-              // @ts-ignore
-              const def = COMPONENT_TYPES[c.type];
+              const def = getComponentDef(c.type);
               const cw = def ? def.width : 50;
               return (
                   c.x < selectionRect.x + selectionRect.w &&
                   c.x + cw > selectionRect.x &&
                   c.y < selectionRect.y + selectionRect.h &&
-                  c.y + def.height > selectionRect.y
+                  c.y + (def?.height ?? 50) > selectionRect.y
               );
           }).map(c => c.id);
           setSelectedCompIds(selected);
@@ -566,11 +611,12 @@ export default function ReactCircuitPro() {
               if (type.includes('ARDUINO')) type = 'ARDUINO';
               if (type.includes('ESP')) type = 'ESP32';
               if (type.includes('RGB')) type = 'RGB_LED';
-              if (!COMPONENT_TYPES[type]) return;
+              const typeDef = getComponentDef(type);
+              if (!typeDef) return;
               let x = startX + (compCount % 3) * 180, y = startY + Math.floor(compCount / 3) * 180;
               if (['ARDUINO', 'ESP32', 'ESP8266'].includes(type)) { x = startX - 200; y = startY; } 
               else { compCount++; }
-              newComps.push({ id: c.id, type, x, y, rotation: 0, state: { angle: 0, value: 0, on: false, r:0, g:0, b:0, segments: {} } });
+              newComps.push({ id: c.id, type: typeDef.type, x, y, rotation: 0, state: { angle: 0, value: 0, on: false, r:0, g:0, b:0, segments: {}, animationValue: null } });
           });
           setComponents(newComps);
 
@@ -668,13 +714,37 @@ export default function ReactCircuitPro() {
           if (current.pinId === '1b') queue.push({ compId: comp.id, pinId: '1a' });
       }
     }
+    // Map pin power for each component so we can drive animations
+    const pinPowerMap: Record<string, Record<string, boolean>> = {};
+    components.forEach((comp) => {
+      const def = getComponentDef(comp.type);
+      if (!def) return;
+      pinPowerMap[comp.id] = {};
+      def.pins.forEach((pin: any) => {
+        pinPowerMap[comp.id][pin.id] = poweredPins.has(`${comp.id}-${pin.id}`);
+      });
+    });
+
     setComponents(prev => prev.map(c => {
-      if (c.type === 'LED') {
-        const isPowered = poweredPins.has(`${c.id}-anode`);
-        return { ...c, state: { on: isPowered } }; 
+      const compPinStates = pinPowerMap[c.id] || {};
+      const prevCompPins = prevPinPowerRef.current[c.id] || {};
+      const changedPinId = Object.keys(compPinStates).find(pinId => compPinStates[pinId] !== prevCompPins[pinId]);
+      let nextState = { ...(c.state || {}) };
+
+      // Tag which pin changed (and whether it went HIGH/LOW) so animations can react to that pin
+      if (changedPinId) {
+        const poweredNow = compPinStates[changedPinId];
+        nextState = { ...nextState, animationValue: `${changedPinId}:${poweredNow ? 'HIGH' : 'LOW'}` };
       }
-      return c;
+
+      if (c.type === 'LED') {
+        const isPowered = compPinStates['anode'] || false;
+        nextState = { ...nextState, on: isPowered };
+      }
+      return { ...c, state: nextState };
     }));
+
+    prevPinPowerRef.current = pinPowerMap;
   };
 
   const toggleSimulation = () => {
@@ -694,8 +764,7 @@ export default function ReactCircuitPro() {
   const getPinCoords = (compId: string, pinId: string) => {
     const comp = components.find(c => c.id === compId);
     if (!comp) return { x: 0, y: 0 };
-    // @ts-ignore
-    const typeDef = COMPONENT_TYPES[comp.type];
+    const typeDef = getComponentDef(comp.type);
     if (!typeDef) return { x: comp.x, y: comp.y };
     const pinDef = typeDef.pins.find((p: any) => p.id === pinId);
     if (!pinDef) return { x: comp.x + 50, y: comp.y + 50 };
@@ -703,65 +772,73 @@ export default function ReactCircuitPro() {
   };
 
   const getWirePath = (s: any, e: any, offset = 0.5, axis = 'x') => {
+      const lead = 10; // straight lead from pins
+      const sLead = axis === 'x' ? { x: s.x + (e.x > s.x ? lead : -lead), y: s.y } : { x: s.x, y: s.y + (e.y > s.y ? lead : -lead) };
+      const eLead = axis === 'x' ? { x: e.x - (e.x > s.x ? lead : -lead), y: e.y } : { x: e.x, y: e.y - (e.y > s.y ? lead : -lead) };
+
       if (wireMode === 'angled') {
           // Rounding Radius
           const r = 10; 
           
           if (axis === 'x') {
-              const midX = s.x + (e.x - s.x) * offset;
+              const midX = sLead.x + (eLead.x - sLead.x) * offset;
               // Clamped Radius based on segment lengths
-              const r1 = Math.min(r, Math.abs(midX - s.x) / 2);
-              const r2 = Math.min(r, Math.abs(e.x - midX) / 2);
-              const ry = Math.min(r, Math.abs(e.y - s.y) / 2);
+              const r1 = Math.min(r, Math.abs(midX - sLead.x) / 2);
+              const r2 = Math.min(r, Math.abs(eLead.x - midX) / 2);
+              const ry = Math.min(r, Math.abs(eLead.y - sLead.y) / 2);
               const effR = Math.min(r1, r2, ry);
 
               // Direction multipliers
-              const dx1 = midX > s.x ? 1 : -1;
-              const dy = e.y > s.y ? 1 : -1;
-              const dx2 = e.x > midX ? 1 : -1;
+              const dx1 = midX > sLead.x ? 1 : -1;
+              const dy = eLead.y > sLead.y ? 1 : -1;
+              const dx2 = eLead.x > midX ? 1 : -1;
 
               return {
                   d: `M ${s.x} ${s.y} 
-                      L ${midX - effR * dx1} ${s.y} 
-                      Q ${midX} ${s.y} ${midX} ${s.y + effR * dy} 
-                      L ${midX} ${e.y - effR * dy} 
-                      Q ${midX} ${e.y} ${midX + effR * dx2} ${e.y} 
+                      L ${sLead.x} ${sLead.y}
+                      L ${midX - effR * dx1} ${sLead.y} 
+                      Q ${midX} ${sLead.y} ${midX} ${sLead.y + effR * dy} 
+                      L ${midX} ${eLead.y - effR * dy} 
+                      Q ${midX} ${eLead.y} ${midX + effR * dx2} ${eLead.y} 
+                      L ${eLead.x} ${eLead.y}
                       L ${e.x} ${e.y}`,
-                  midX, midY: (s.y + e.y) / 2,
+                  midX, midY: (sLead.y + eLead.y) / 2,
                   axis: 'x',
-                  dragRect: { x: midX - 8, y: Math.min(s.y, e.y), w: 16, h: Math.abs(e.y - s.y) } // Hit area for vertical segment
+                  dragRect: { x: midX - 8, y: Math.min(sLead.y, eLead.y), w: 16, h: Math.abs(eLead.y - sLead.y) } // Hit area for vertical segment
               };
           } else {
               // Y-Axis (Start -> Vertical -> Horizontal -> Vertical -> End)
-              const midY = s.y + (e.y - s.y) * offset;
+              const midY = sLead.y + (eLead.y - sLead.y) * offset;
               
               // Clamped Radius
-              const ry1 = Math.min(r, Math.abs(midY - s.y) / 2);
-              const ry2 = Math.min(r, Math.abs(e.y - midY) / 2);
-              const rx = Math.min(r, Math.abs(e.x - s.x) / 2);
+              const ry1 = Math.min(r, Math.abs(midY - sLead.y) / 2);
+              const ry2 = Math.min(r, Math.abs(eLead.y - midY) / 2);
+              const rx = Math.min(r, Math.abs(eLead.x - sLead.x) / 2);
               const effR = Math.min(ry1, ry2, rx);
 
-              const dy1 = midY > s.y ? 1 : -1;
-              const dx = e.x > s.x ? 1 : -1;
-              const dy2 = e.y > midY ? 1 : -1;
+              const dy1 = midY > sLead.y ? 1 : -1;
+              const dx = eLead.x > sLead.x ? 1 : -1;
+              const dy2 = eLead.y > midY ? 1 : -1;
 
               return {
                   d: `M ${s.x} ${s.y} 
-                      L ${s.x} ${midY - effR * dy1} 
-                      Q ${s.x} ${midY} ${s.x + effR * dx} ${midY} 
-                      L ${e.x - effR * dx} ${midY} 
-                      Q ${e.x} ${midY} ${e.x} ${midY + effR * dy2} 
+                      L ${sLead.x} ${sLead.y}
+                      L ${sLead.x} ${midY - effR * dy1} 
+                      Q ${sLead.x} ${midY} ${sLead.x + effR * dx} ${midY} 
+                      L ${eLead.x - effR * dx} ${midY} 
+                      Q ${eLead.x} ${midY} ${eLead.x} ${midY + effR * dy2} 
+                      L ${eLead.x} ${eLead.y}
                       L ${e.x} ${e.y}`,
-                  midX: (s.x + e.x) / 2, midY,
+                  midX: (sLead.x + eLead.x) / 2, midY,
                   axis: 'y',
-                  dragRect: { x: Math.min(s.x, e.x), y: midY - 8, w: Math.abs(e.x - s.x), h: 16 } // Hit area for horizontal segment
+                  dragRect: { x: Math.min(sLead.x, eLead.x), y: midY - 8, w: Math.abs(eLead.x - sLead.x), h: 16 } // Hit area for horizontal segment
               };
           }
       }
       // Curve mode
-      const dx = Math.abs(e.x - s.x);
+      const dx = Math.abs(eLead.x - sLead.x);
       const cOff = Math.max(dx * 0.5, 50);
-      return { d: `M ${s.x} ${s.y} C ${s.x + cOff} ${s.y}, ${e.x - cOff} ${e.y}, ${e.x} ${e.y}` };
+      return { d: `M ${s.x} ${s.y} L ${sLead.x} ${sLead.y} C ${sLead.x + cOff} ${sLead.y}, ${eLead.x - cOff} ${eLead.y}, ${eLead.x} ${eLead.y} L ${e.x} ${e.y}` };
   };
 
   // --- GRID PATTERN ---
@@ -780,76 +857,107 @@ export default function ReactCircuitPro() {
   // --- RENDERERS ---
 
   const renderRealisticComponent = (comp: any) => {
-    // @ts-ignore
-    const typeDef = COMPONENT_TYPES[comp.type];
+    const typeDef = getComponentDef(comp.type);
     if (!typeDef) return null;
     const isSelected = selectedCompIds.includes(comp.id);
+    const isArduino = comp.type === 'ARDUINO';
+    const connectedPinIds = new Set(
+      wires
+        .filter((w) => w.startComp === comp.id || w.endComp === comp.id)
+        .map((w) => (w.startComp === comp.id ? w.startPin : w.endPin))
+    );
 
-    // Calculate connected pins for this component
-    const connectedPinIds = new Set(wires
-      .filter(w => w.startComp === comp.id || w.endComp === comp.id)
-      .map(w => w.startComp === comp.id ? w.startPin : w.endPin)
+    const renderPinSockets = () => (
+      <div className="absolute inset-0 pointer-events-none">
+        {typeDef.pins.map((p: any) => (
+          <div
+            key={`${comp.id}-${p.id}-hole`}
+            className="absolute flex items-center justify-center"
+            style={{
+              left: p.x - (isArduino ? 9 : 8),
+              top: p.y - (isArduino ? 9 : 10),
+              width: isArduino ? 18 : 16,
+              height: isArduino ? 16 : 12,
+            }}
+          >
+            <div
+              className={`rounded-full ${isArduino ? 'bg-gradient-to-b from-[#16181d] to-[#050607] border border-[#1f2937] shadow-[inset_0_1px_2px_rgba(255,255,255,0.06)]' : 'bg-gray-900 border border-gray-700/80'}`}
+              style={{
+                width: isArduino ? 8 : 6,
+                height: isArduino ? 8 : 6,
+                boxShadow: isArduino ? '0 0 0 2px #0f172a' : undefined,
+              }}
+            />
+          </div>
+        ))}
+      </div>
     );
 
     return (
-        <div key={comp.id} 
-            onMouseDown={(e) => handleComponentMouseDown(e, comp.id)}
-            style={{position:'absolute', left: comp.x, top: comp.y, width: typeDef.width, height: typeDef.height}}
-            className={`group cursor-grab active:cursor-grabbing z-20 ${isSelected ? 'ring-2 ring-blue-500 rounded-lg shadow-xl' : ''}`}
-        >
-            {!isSimulating && isSelected && (
-                <button onClick={(e) => {e.stopPropagation(); removeComponent(comp.id)}} className="absolute -top-3 -right-3 bg-red-500 text-white p-1.5 rounded-full hover:scale-110 z-50 shadow-md transition-transform"><Trash2 size={12}/></button>
-            )}
+      <div
+        key={comp.id}
+        onMouseDown={(e) => handleComponentMouseDown(e, comp.id)}
+        style={{ position: 'absolute', left: comp.x, top: comp.y, width: typeDef.width, height: typeDef.height }}
+        className={`group cursor-grab active:cursor-grabbing z-20 ${isSelected ? 'shadow-[0_0_0_2px_rgba(255,255,255,0.35)] rounded-xl' : ''}`}
+      >
+        {!isSimulating && isSelected && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              removeComponent(comp.id);
+            }}
+            className="absolute -top-3 -right-3 bg-red-500 text-white p-1.5 rounded-full hover:scale-110 z-50 shadow-md transition-transform"
+          >
+            <Trash2 size={12} />
+          </button>
+        )}
 
-            {/* Visuals */}
-            {comp.type === 'ARDUINO' && (
-                <div className="w-full h-full">
-                     <svg viewBox="0 0 260 190" className="w-full h-full drop-shadow-xl">
-                         <path d="M 0,15 Q 0,0 15,0 L 245,0 Q 260,0 260,15 L 260,175 Q 260,190 245,190 L 75,190 L 70,180 L 40,180 L 35,190 L 15,190 Q 0,190 0,175 Z" fill="#00878F" stroke="#006269" strokeWidth="2" />
-                         <rect x="-10" y="20" width="40" height="35" fill="#C0C0C0" stroke="#808080" />
-                         <rect x="-5" y="130" width="40" height="40" fill="#111" />
-                         <rect x="68" y="5" width="190" height="14" fill="#000" /> 
-                         <rect x="120" y="171" width="140" height="14" fill="#000" /> 
-                         <text x="130" y="100" fontFamily="sans-serif" fontSize="18" fill="white" fontWeight="bold" transform="rotate(-90, 130, 100)">ARDUINO</text>
-                         <text x="150" y="100" fontFamily="sans-serif" fontSize="14" fill="white" transform="rotate(-90, 150, 100)">UNO</text>
-                     </svg>
-                </div>
-            )}
-            
-            {comp.type === 'LED' && (
-                <div className="w-full h-full flex justify-center relative">
-                    <div className={`w-8 h-8 rounded-full border-2 border-black/20 transition-all duration-300 
-                        ${comp.state.on ? 'bg-red-500 shadow-[0_0_30px_10px_rgba(239,68,68,0.6)]' : 'bg-red-900'}`}>
-                    </div>
-                    <div className="absolute bottom-0 w-full flex justify-between px-1"><div className="w-1 h-8 bg-gray-400 shadow-inner"></div><div className="w-1 h-8 bg-gray-400 shadow-inner"></div></div>
-                </div>
-            )}
-            {comp.type === 'RESISTOR' && <div className="w-full h-full flex items-center justify-center drop-shadow-md"><div className="w-full h-1 bg-gray-400 absolute"></div><div className="w-14 h-5 bg-[#E4D6A7] border border-[#8B7355] rounded-full relative z-10 flex items-center justify-center gap-1">
-                        <div className="w-1 h-full bg-red-500"></div><div className="w-1 h-full bg-black"></div><div className="w-1 h-full bg-red-500"></div>
-                    </div>
-                </div>}
-            
-            {!['ARDUINO', 'LED', 'RESISTOR'].includes(comp.type) && <div className="w-full h-full bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-600 rounded-lg flex items-center justify-center text-xs text-gray-300 shadow-xl font-mono font-bold">{typeDef.name}</div>}
-            
-            {/* Pins */}
-            {typeDef.pins.map((p: any) => {
-                const isConnected = connectedPinIds.has(p.id);
-                return (
-                    <div key={p.id} 
-                         onClick={(e) => handlePinClick(comp.id, p.id, e)}
-                         className={`absolute w-3 h-3 rounded-full transition-all duration-200 cursor-crosshair z-50 shadow-sm
-                            ${isConnected 
-                                ? 'bg-green-500 border border-green-700 scale-110' 
-                                : 'bg-yellow-400/30 border border-yellow-600 hover:bg-yellow-200 hover:scale-150 animate-pulse'
-                            }
-                         `}
-                         style={{left: p.x-6, top: p.y-6}}
-                         title={p.label}
-                         onMouseDown={(e) => e.stopPropagation()} 
-                    />
-                );
-            })}
+        <div
+          className={`w-full h-full relative rounded-xl overflow-hidden ${
+            typeDef.image_url ? '' : 'border border-gray-700/60 bg-gradient-to-br from-slate-800 via-slate-900 to-black shadow-[0_12px_28px_rgba(0,0,0,0.45)]'
+          }`}
+        >
+          {typeDef.image_url ? (
+            <img
+              src={typeDef.image_url}
+              className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none"
+              alt={typeDef.name}
+              draggable={false}
+            />
+          ) : (
+            <>
+              <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_20%_20%,#fff,transparent_35%)]" />
+              <div className="absolute inset-0 flex items-start justify-between p-3 text-[10px] uppercase tracking-[0.18em] text-gray-200/70 font-semibold pointer-events-none">
+                <span>{typeDef.name}</span>
+                <span>{comp.type}</span>
+              </div>
+              <div className="absolute inset-3 rounded-lg overflow-hidden border border-gray-700/60 bg-gray-900/70 flex items-center justify-center text-gray-500 text-xs font-medium">
+                Image placeholder
+              </div>
+            </>
+          )}
+
+          {renderPinSockets()}
         </div>
+
+        {typeDef.pins.map((p: any) => {
+          const isConnected = connectedPinIds.has(p.id);
+          return (
+            <div
+              key={p.id}
+              onClick={(e) => handlePinClick(comp.id, p.id, e)}
+              className={`absolute w-3 h-3 rounded-full transition-all duration-150 cursor-crosshair z-50 shadow-sm border ${
+                isConnected
+                  ? 'bg-emerald-400 border-emerald-700 shadow-[0_0_12px_rgba(16,185,129,0.7)] scale-110'
+                  : 'bg-gradient-to-b from-gray-700 to-black border-gray-900 hover:scale-125 hover:border-blue-400'
+              }`}
+              style={{ left: p.x - 6, top: p.y - 6 }}
+              title={p.label}
+              onMouseDown={(e) => e.stopPropagation()}
+            />
+          );
+        })}
+      </div>
     );
   };
 
@@ -866,19 +974,31 @@ export default function ReactCircuitPro() {
         </div>
         
         <div className="p-4 flex-1 overflow-y-auto grid grid-cols-2 gap-3 content-start custom-scrollbar">
-            {Object.keys(COMPONENT_TYPES).map(k => (
-                <div key={k} onClick={() => addComponent(k)} 
-                     className={`group p-3 rounded-xl border cursor-pointer flex flex-col items-center transition-all duration-200
-                        ${darkMode 
-                           ? 'bg-gray-700/50 border-gray-600 hover:bg-gray-700 hover:border-blue-500' 
-                           : 'bg-white border-gray-200 hover:border-blue-500 hover:shadow-md hover:-translate-y-0.5'
-                        }`}>
-                    <div className={`p-2 rounded-lg mb-2 ${darkMode ? 'bg-gray-600 group-hover:text-blue-400' : 'bg-gray-100 group-hover:text-blue-600'}`}>
-                        <Cpu size={20} className="text-gray-500 group-hover:text-blue-500 transition-colors"/>
-                    </div>
-                    <span className={`text-[10px] font-bold text-center ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{COMPONENT_TYPES[k].name}</span>
+            {libraryLoading && <div className="col-span-2 text-center text-xs text-gray-500">Loading components...</div>}
+            {libraryError && <div className="col-span-2 text-center text-xs text-red-400">{libraryError}</div>}
+            {!libraryLoading && !libraryError && Object.values(componentLibrary).map((def) => (
+              <div
+                key={def.id}
+                onClick={() => addComponent(def.type)}
+                className={`group p-3 rounded-xl border cursor-pointer flex flex-col items-center transition-all duration-200
+                  ${darkMode 
+                    ? 'bg-gray-700/50 border-gray-600 hover:bg-gray-700 hover:border-blue-500' 
+                    : 'bg-white border-gray-200 hover:border-blue-500 hover:shadow-md hover:-translate-y-0.5'
+                  }`}
+              >
+                <div className={`mb-2 w-16 h-16 flex items-center justify-center ${def.image_url ? '' : darkMode ? 'bg-gray-600 group-hover:text-blue-400 rounded-lg' : 'bg-gray-100 group-hover:text-blue-600 rounded-lg'}`}>
+                  {def.image_url ? (
+                    <img src={def.image_url} className="max-w-full max-h-full object-contain pointer-events-none" alt={def.name} />
+                  ) : (
+                    <Cpu size={24} className="text-gray-500 group-hover:text-blue-500 transition-colors"/>
+                  )}
                 </div>
+                <span className={`text-[11px] font-bold text-center ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>{def.name}</span>
+              </div>
             ))}
+            {!libraryLoading && !libraryError && Object.keys(componentLibrary).length === 0 && (
+              <div className="col-span-2 text-center text-xs text-gray-500">No components available</div>
+            )}
         </div>
         
         <div className="p-4 border-t dark:border-gray-700">
@@ -922,7 +1042,23 @@ export default function ReactCircuitPro() {
                         </button>
                     )}
                     
-                    {selectedWireId && <button onClick={() => {setWires(w => w.filter(x=>x.id!==selectedWireId)); setSelectedWireId(null)}} className="text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded-lg text-xs flex items-center gap-2 font-medium hover:bg-red-100 transition-colors"><Trash2 size={14}/> {t.deleteWire}</button>}
+                    {selectedWireId && (
+                      <>
+                        <select
+                          value={wires.find(w => w.id === selectedWireId)?.color || '#10B981'}
+                          onChange={(e) => setWires(prev => prev.map(w => w.id === selectedWireId ? { ...w, color: e.target.value } : w))}
+                          className="text-xs border rounded-lg px-2 py-2 bg-white text-gray-700"
+                        >
+                          <option value="#10B981">Green</option>
+                          <option value="#3B82F6">Blue</option>
+                          <option value="#EF4444">Red</option>
+                          <option value="#F59E0B">Orange</option>
+                          <option value="#8B5CF6">Purple</option>
+                          <option value="#111827">Black</option>
+                        </select>
+                        <button onClick={() => {setWires(w => w.filter(x=>x.id!==selectedWireId)); setSelectedWireId(null)}} className="text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded-lg text-xs flex items-center gap-2 font-medium hover:bg-red-100 transition-colors"><Trash2 size={14}/> {t.deleteWire}</button>
+                      </>
+                    )}
                     {selectedCompIds.length > 0 && <button onClick={() => {setComponents(c => c.filter(x => !selectedCompIds.includes(x.id))); setSelectedCompIds([]);}} className="text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded-lg text-xs flex items-center gap-2 font-medium hover:bg-red-100 transition-colors"><Trash2 size={14}/> {t.deleteComponents}</button>}
                 </div>
             </div>

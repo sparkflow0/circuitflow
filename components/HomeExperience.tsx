@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, FormEvent } from 'react';
+import React, { useState, FormEvent, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ArrowLeft,
@@ -254,42 +254,55 @@ export default function HomeExperience({ courses, blogs, products }: ExperienceP
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const normalizedCourses = courses.map((course) => ({
-    ...course,
-    level: course.level ?? 'Beginner',
-    duration: course.duration ?? (course.duration_minutes ? Math.ceil(course.duration_minutes / 60) : 2),
-    lessons: course.lessons ?? course.lessons_count ?? 8,
-    progress: course.progress ?? 0,
-    cover_image: course.cover_image ?? undefined,
-    short_description: course.short_description ?? course.description ?? course.full_description ?? '',
-    description: course.full_description ?? course.description ?? course.short_description ?? '',
-    syllabus: Array.isArray(course.syllabus) ? course.syllabus : [],
-    price: course.price ?? 0,
-  }));
+  const normalizedCourses = useMemo(
+    () =>
+      courses.map((course) => ({
+        ...course,
+        level: course.level ?? 'Beginner',
+        duration: course.duration ?? (course.duration_minutes ? Math.ceil(course.duration_minutes / 60) : 2),
+        lessons: course.lessons ?? course.lessons_count ?? 8,
+        progress: course.progress ?? 0,
+        cover_image: course.cover_image ?? undefined,
+        short_description: course.short_description ?? course.description ?? course.full_description ?? '',
+        description: course.full_description ?? course.description ?? course.short_description ?? '',
+        syllabus: Array.isArray(course.syllabus) ? course.syllabus : [],
+        price: course.price ?? 0,
+      })),
+    [courses],
+  );
 
-  const normalizedBlogs = blogs.map((blog) => ({
-    ...blog,
-    author: blog.author ?? 'فريق CircuitFlow',
-    category: blog.category ?? 'تعليمي',
-    cover_image: blog.cover_image ?? undefined,
-    content: blog.content ?? blog.excerpt ?? '',
-    read_time:
-      blog.read_time ?? `${Math.max(1, Math.round((blog.content ?? blog.excerpt ?? '').split(/\s+/).length / 200))} دقائق`,
-  }));
+  const normalizedBlogs = useMemo(
+    () =>
+      blogs.map((blog) => ({
+        ...blog,
+        author: blog.author ?? 'فريق CircuitFlow',
+        category: blog.category ?? 'تعليمي',
+        cover_image: blog.cover_image ?? undefined,
+        content: blog.content ?? blog.excerpt ?? '',
+        read_time:
+          blog.read_time ??
+          `${Math.max(1, Math.round((blog.content ?? blog.excerpt ?? '').split(/\s+/).length / 200))} دقائق`,
+      })),
+    [blogs],
+  );
 
-  const normalizedProducts = products.map((product) => ({
-    ...product,
-    title: product.title,
-    description: product.description ?? '',
-    cover_image: product.cover_image ?? product.file_url ?? undefined,
-    category: product.category ?? 'منتج رقمي',
-    price: product.price ?? 0,
-    specs: Array.isArray(product.specs)
-      ? product.specs
-      : Array.isArray(product.variants)
-        ? product.variants.map((variant) => variant.name)
-        : [],
-  }));
+  const normalizedProducts = useMemo(
+    () =>
+      products.map((product) => ({
+        ...product,
+        title: product.title,
+        description: product.description ?? '',
+        cover_image: product.cover_image ?? product.file_url ?? undefined,
+        category: product.category ?? 'منتج رقمي',
+        price: product.price ?? 0,
+        specs: Array.isArray(product.specs)
+          ? product.specs
+          : Array.isArray(product.variants)
+            ? product.variants.map((variant) => variant.name)
+            : [],
+      })),
+    [products],
+  );
 
   const resetViews = () => {
     setSelectedCourseId(null);

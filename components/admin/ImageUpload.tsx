@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
 import { Upload, Loader2, X } from 'lucide-react';
 
-export default function ImageUpload({ name, defaultValue, label }: { name: string, defaultValue?: string, label: string }) {
+export default function ImageUpload({ name, defaultValue, label, onChange }: { name: string, defaultValue?: string, label: string, onChange?: (url: string) => void }) {
   const [url, setUrl] = useState(defaultValue || '');
   const [uploading, setUploading] = useState(false);
 
@@ -32,6 +32,7 @@ export default function ImageUpload({ name, defaultValue, label }: { name: strin
 
       const { data } = supabase.storage.from('images').getPublicUrl(filePath);
       setUrl(data.publicUrl);
+      onChange?.(data.publicUrl);
     } catch (error: any) {
       alert('Error uploading image: ' + error.message);
       console.error(error);
