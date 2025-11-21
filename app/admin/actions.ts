@@ -168,6 +168,7 @@ export async function upsertComponent(formData: FormData) {
   const pinsRaw = formData.get('pins') as string;
   const animationsRaw = formData.get('animations') as string;
   const metadataRaw = formData.get('metadata') as string;
+  const svgMarkup = (formData.get('svg_markup') as string) || null;
 
   let pins: any[] = [];
   let animations: any[] = [];
@@ -188,6 +189,7 @@ export async function upsertComponent(formData: FormData) {
     pins,
     animations,
     metadata,
+    svg_markup: svgMarkup,
     updated_at: new Date().toISOString(),
   };
 

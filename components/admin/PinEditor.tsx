@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 
-export type PinPoint = { id: string; label?: string; x: number; y: number; voltage?: string };
+export type PinPoint = { id: string; label?: string; x: number; y: number; voltage?: string; width?: number; height?: number };
 
 type Voltage = '5V' | '3.3V' | 'GND' | 'NORMAL';
 
@@ -13,6 +13,7 @@ export default function PinEditor({
   width,
   height,
   value,
+  svgMarkup,
   onChange,
 }: {
   imageUrl?: string | null;
@@ -20,6 +21,7 @@ export default function PinEditor({
   width: number;
   height: number;
   value: PinPoint[];
+  svgMarkup?: string | null;
   onChange: (pins: PinPoint[]) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -203,7 +205,12 @@ export default function PinEditor({
         className="relative border rounded-lg overflow-hidden bg-slate-100"
         style={{ width: width ? `${width}px` : '100%', maxWidth: '100%', aspectRatio: `${width}/${height}` }}
       >
-        {imageUrl ? (
+        {svgMarkup ? (
+          <div
+            className="absolute inset-0 pointer-events-none [&_svg]:w-full [&_svg]:h-full [&_svg]:object-contain [&_svg]:overflow-visible"
+            dangerouslySetInnerHTML={{ __html: svgMarkup }}
+          />
+        ) : imageUrl ? (
           <img src={imageUrl} alt="Component" className="w-full h-full object-contain select-none pointer-events-none" />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-slate-400 text-sm bg-slate-200">No image</div>
@@ -227,11 +234,23 @@ export default function PinEditor({
           {pins.map((pin) => {
             const left = (pin.x / width) * 100;
             const top = (pin.y / height) * 100;
+            const pinW = pin.width ?? 10;
+            const pinH = pin.height ?? 10;
+            const pinWPercent = (pinW / width) * 100;
+            const pinHPercent = (pinH / height) * 100;
             return (
               <div
                 key={pin.id}
-                className={`absolute w-3.5 h-3.5 rounded-full border-2 border-white shadow cursor-grab active:cursor-grabbing ${voltageColor(pin.voltage)} ${selectedIds.includes(pin.id) ? 'ring-2 ring-blue-400' : ''}`}
-                style={{ left: `${left}%`, top: `${top}%`, transform: 'translate(-50%, -50%)' }}
+                className={`absolute border-2 border-white shadow cursor-grab active:cursor-grabbing ${voltageColor(pin.voltage)} ${selectedIds.includes(pin.id) ? 'ring-2 ring-blue-400' : ''}`}
+                style={{
+                  left: `${left}%`,
+                  top: `${top}%`,
+                  width: `${pinWPercent}%`,
+                  height: `${pinHPercent}%`,
+                  transform: 'translate(-50%, -50%)',
+                  minWidth: '6px',
+                  minHeight: '6px',
+                }}
                 title={pin.label || pin.id}
                 onMouseDown={(e) => {
                   e.preventDefault();
@@ -256,11 +275,11 @@ export default function PinEditor({
       </div>
 
       <div className="bg-slate-50 border rounded-lg p-3">
-        <div className="text-xs text-slate-500 mb-2">Pins</div>
-        <div className="space-y-2 max-h-48 overflow-auto">
-          {pins.map((pin) => (
-            <div
-              key={pin.id}
+            <div className="text-xs text-slate-500 mb-2">Pins</div>
+            <div className="space-y-2 max-h-48 overflow-auto">
+              {pins.map((pin) => (
+                <div
+                  key={pin.id}
               ref={selectedIds.includes(pin.id) ? selectedRowRef : null}
               className={`flex items-center gap-2 text-sm bg-white border rounded-lg p-2 transition-all ${selectedIds.includes(pin.id) ? 'ring-2 ring-blue-400 shadow-sm' : ''}`}
               onClick={(e) => {
@@ -272,14 +291,14 @@ export default function PinEditor({
                   setSelectedIds([pin.id]);
                 }
               }}
-            >
-              <span className={`w-2 h-2 rounded-full ${voltageColor(pin.voltage)}`} />
-              <input
-                className="border rounded px-2 py-1 text-xs flex-1"
-                placeholder="Label"
-                value={pin.label || ''}
-                onChange={(e) => updatePin(pin.id, { label: e.target.value })}
-              />
+              >
+                <span className={`w-2 h-2 rounded-full ${voltageColor(pin.voltage)}`} />
+                <input
+                  className="border rounded px-2 py-1 text-xs flex-1"
+                  placeholder="Label"
+                  value={pin.label || ''}
+                  onChange={(e) => updatePin(pin.id, { label: e.target.value })}
+                />
               <select
                 className="border rounded px-2 py-1 text-xs"
                 value={pin.voltage || 'NORMAL'}

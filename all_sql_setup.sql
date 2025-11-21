@@ -156,6 +156,7 @@ create table public.components (
   slug text not null unique,
   category text,
   image_url text,
+  svg_markup text,
   width integer not null,
   height integer not null,
   pins jsonb not null default '[]'::jsonb,

@@ -114,12 +114,90 @@ const getWireColor = (startPin: string, endPin: string) => {
     return '#10B981'; // Default Green
 };
 
+const WIRE_COLOR_CHOICES = [
+  { name: 'Green', value: '#10B981' },
+  { name: 'Blue', value: '#3B82F6' },
+  { name: 'Red', value: '#EF4444' },
+  { name: 'Orange', value: '#F59E0B' },
+  { name: 'Purple', value: '#8B5CF6' },
+  { name: 'Black', value: '#111827' },
+  { name: 'Yellow', value: '#FACC15' },
+  { name: 'Gray', value: '#6B7280' },
+  { name: 'Brown', value: '#A16207' },
+  { name: 'Teal', value: '#14B8A6' },
+  { name: 'White', value: '#E5E7EB' },
+];
+
+const GUIDE_STEPS = [
+  { title: 'Toolbar', body: 'Use the toolbar to toggle grid, switch wire styles, pick wire colors, and flip axis for angled wires.', target: 'tour-toolbar' },
+  { title: 'Component Library', body: 'Drag or click components from the library to add them to the canvas.', target: 'tour-library' },
+  { title: 'Canvas', body: 'Pan with drag, zoom with wheel/trackpad, wire components, and place parts on the canvas.', target: 'tour-canvas' },
+  { title: 'Code & Serial', body: 'Edit your Arduino sketch and watch serial output here.', target: 'tour-code' },
+  { title: 'AI Assistant', body: 'Let the AI generate or explain circuits and code.', target: 'tour-ai' },
+];
+
+// --- HELPER: Parse pins from SVG markup (data-pin-*) ---
+const parsePinsFromSvgMarkup = (markup: string, targetWidth: number, targetHeight: number): ComponentPin[] => {
+  if (typeof DOMParser === 'undefined' || !markup) return [];
+  try {
+    const parser = new DOMParser();
+    const parseSvg = (m: string) => parser.parseFromString(m, 'image/svg+xml');
+    let doc = parseSvg(markup);
+    let svg = doc.querySelector('svg');
+    if (!svg) {
+      const wrapped = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${targetWidth || 200} ${targetHeight || 200}">${markup}</svg>`;
+      doc = parseSvg(wrapped);
+      svg = doc.querySelector('svg');
+    }
+    if (!svg) return [];
+    const vb = svg.getAttribute('viewBox')?.trim().split(/\s+/).map(Number);
+    const minX = vb && vb.length === 4 ? vb[0] : 0;
+    const minY = vb && vb.length === 4 ? vb[1] : 0;
+    const vbW = vb && vb.length === 4 ? (vb[2] || targetWidth || 1) : (Number(svg.getAttribute('width')) || targetWidth || 1);
+    const vbH = vb && vb.length === 4 ? (vb[3] || targetHeight || 1) : (Number(svg.getAttribute('height')) || targetHeight || 1);
+
+    const nodes = svg.querySelectorAll('[data-pin-id], [data-pin]');
+    const pins: ComponentPin[] = [];
+    nodes.forEach((node) => {
+      const id = node.getAttribute('data-pin-id') || node.getAttribute('data-pin');
+      if (!id) return;
+      const descText = node.querySelector('desc')?.textContent || '';
+      const noteMatch = descText?.match(/data-pin(?:-label)?=([\\w-]+)/i);
+      const label = node.getAttribute('data-pin-label') || noteMatch?.[1] || id;
+      const voltage = node.getAttribute('data-pin-voltage') || undefined;
+      const rawW = node.getAttribute('data-pin-width') || node.getAttribute('width') || node.getAttribute('r');
+      const rawH = node.getAttribute('data-pin-height') || node.getAttribute('height') || node.getAttribute('r');
+      const dx = node.getAttribute('data-pin-x');
+      const dy = node.getAttribute('data-pin-y');
+      const cx = node.getAttribute('cx');
+      const cy = node.getAttribute('cy');
+      const xAttr = node.getAttribute('x');
+      const yAttr = node.getAttribute('y');
+      const rawX = dx ?? cx ?? xAttr;
+      const rawY = dy ?? cy ?? yAttr;
+      if (!rawX || !rawY) return;
+      const x = Math.round(((parseFloat(rawX) - minX) / vbW) * (targetWidth || 1));
+      const y = Math.round(((parseFloat(rawY) - minY) / vbH) * (targetHeight || 1));
+      const w = rawW ? Math.max(4, Math.round(((parseFloat(rawW) * (rawW === node.getAttribute('r') ? 2 : 1)) / vbW) * (targetWidth || 1))) : undefined;
+      const h = rawH ? Math.max(4, Math.round(((parseFloat(rawH) * (rawH === node.getAttribute('r') ? 2 : 1)) / vbH) * (targetHeight || 1))) : undefined;
+      if (Number.isNaN(x) || Number.isNaN(y)) return;
+      pins.push({ id, label, x, y, voltage, width: w, height: h });
+    });
+    return pins;
+  } catch (err) {
+    console.warn('Failed to parse SVG pins', err);
+    return [];
+  }
+};
+
 type ComponentPin = {
   id: string;
   label?: string | null;
   x: number;
   y: number;
   voltage?: string | null;
+  width?: number | null;
+  height?: number | null;
 };
 
 type ComponentDefinition = {
@@ -129,6 +207,7 @@ type ComponentDefinition = {
   slug: string;
   category?: string | null;
   image_url?: string | null;
+  svg_markup?: string | null;
   width: number;
   height: number;
   pins: ComponentPin[];
@@ -233,23 +312,79 @@ export default function ReactCircuitPro() {
   const [wireColorPickerOpen, setWireColorPickerOpen] = useState(false);
   const [selectedCompIds, setSelectedCompIds] = useState<string[]>([]);
   const [selectionRect, setSelectionRect] = useState<{x:number, y:number, w:number, h:number} | null>(null);
-  const [dragWireSegment, setDragWireSegment] = useState<{wireId: string, axis: 'x'|'y', initialVal: number, mouseStart: number} | null>(null);
+  const [hoveredWireId, setHoveredWireId] = useState<string | null>(null);
+  const [dragWireSegment, setDragWireSegment] = useState<{wireId: string} | null>(null);
+  const [wireGuide, setWireGuide] = useState<{x?: number; y?: number} | null>(null);
+  const [bendMenu, setBendMenu] = useState<{ wireId: string; index: number; x: number; y: number } | null>(null);
+  const [showGuide, setShowGuide] = useState(false);
+  const [guideStep, setGuideStep] = useState(0);
+  const [guideRect, setGuideRect] = useState<DOMRect | null>(null);
   
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const [selection, setSelection] = useState({ start: 0, end: 0, text: '' });
   const [isMouseDownOnCanvas, setIsMouseDownOnCanvas] = useState(false);
-  const [selectionStartPoint, setSelectionStartPoint] = useState({ x: 0, y: 0 });
-  
-  const [view, setView] = useState({ x: 0, y: 0, scale: 1 }); 
-  const [isPanning, setIsPanning] = useState(false);
-  const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
-  
+
   const simulationRef = useRef({ active: false, pinStates: {} as Record<string, any>, servoAngles: {}, potValues: {} });
   const prevPinPowerRef = useRef<Record<string, Record<string, boolean>>>({});
   const logsEndRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const speechRef = useRef<SpeechSynthesis | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
+
+  // Prevent browser zoom/overscroll while interacting with canvas
+  useEffect(() => {
+    const withinCanvas = (e: { clientX?: number; clientY?: number; target?: EventTarget | null }) => {
+      const node = canvasRef.current;
+      if (!node) return false;
+      if (e.target && node.contains(e.target as Node)) return true;
+      if (typeof e.clientX === 'number' && typeof e.clientY === 'number') {
+        const rect = node.getBoundingClientRect();
+        return e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
+      }
+      return false;
+    };
+
+    const handleWheel = (e: WheelEvent) => {
+      if ((e.ctrlKey || e.shiftKey) && withinCanvas(e)) e.preventDefault();
+    };
+    const preventGesture = (e: Event) => {
+      if (withinCanvas(e as any)) e.preventDefault();
+    };
+
+    window.addEventListener('wheel', handleWheel, { passive: false, capture: true });
+    window.addEventListener('gesturestart', preventGesture as any, { passive: false, capture: true });
+    window.addEventListener('gesturechange', preventGesture as any, { passive: false, capture: true });
+    return () => {
+      window.removeEventListener('wheel', handleWheel, true);
+      window.removeEventListener('gesturestart', preventGesture as any, true);
+      window.removeEventListener('gesturechange', preventGesture as any, true);
+    };
+  }, []);
+
+  // Prevent page zoom/back-forward gestures while interacting with canvas
+  useEffect(() => {
+    const node = canvasRef.current;
+    if (!node) return;
+    const handleWheelInside = (e: WheelEvent) => {
+      if (e.ctrlKey || e.shiftKey) e.preventDefault(); // block pinch and horizontal nav
+    };
+    const handleTouch = (e: TouchEvent) => {
+      e.preventDefault(); // block swipe navigation/zoom
+    };
+    node.addEventListener('wheel', handleWheelInside, { passive: false });
+    node.addEventListener('touchstart', handleTouch, { passive: false });
+    node.addEventListener('touchmove', handleTouch, { passive: false });
+    return () => {
+      node.removeEventListener('wheel', handleWheelInside);
+      node.removeEventListener('touchstart', handleTouch);
+      node.removeEventListener('touchmove', handleTouch);
+    };
+  }, [canvasRef]);
+  const [selectionStartPoint, setSelectionStartPoint] = useState({ x: 0, y: 0 });
+  
+  const [view, setView] = useState({ x: 0, y: 0, scale: 2 }); 
+  const [isPanning, setIsPanning] = useState(false);
+  const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
       if (typeof window !== 'undefined') speechRef.current = window.speechSynthesis;
@@ -280,10 +415,14 @@ export default function ReactCircuitPro() {
         if (!res.ok) throw new Error('Failed to load component library');
         const payload = await res.json();
         const defs = Array.isArray(payload.components) ? payload.components : [];
-        const mapped = defs.reduce((acc: Record<string, ComponentDefinition>, item: ComponentDefinition) => {
+        const mapped = defs.reduce((acc: Record<string, ComponentDefinition>, item: any) => {
           if (!item?.type) return acc;
           const key = item.type.toUpperCase();
-          acc[key] = { ...item, type: key, pins: Array.isArray(item.pins) ? item.pins : [] };
+          const parsedPins = item.svg_markup
+            ? parsePinsFromSvgMarkup(item.svg_markup, item.width || 200, item.height || 200)
+            : [];
+          const storedPins = Array.isArray(item.pins) ? item.pins : [];
+          acc[key] = { ...item, type: key, pins: parsedPins.length ? parsedPins : storedPins };
           return acc;
         }, {});
         setComponentLibrary(mapped);
@@ -296,6 +435,27 @@ export default function ReactCircuitPro() {
 
     fetchComponents();
   }, []);
+
+  // Guide overlay: measure target rect
+  useEffect(() => {
+    if (!showGuide) return;
+    const step = GUIDE_STEPS[guideStep];
+    const updateRect = () => {
+      if (!step?.target) {
+        setGuideRect(null);
+        return;
+      }
+      const el = document.querySelector(`[data-tour="${step.target}"]`) as HTMLElement | null;
+      if (el) {
+        setGuideRect(el.getBoundingClientRect());
+      } else {
+        setGuideRect(null);
+      }
+    };
+    updateRect();
+    window.addEventListener('resize', updateRect);
+    return () => window.removeEventListener('resize', updateRect);
+  }, [showGuide, guideStep]);
 
   // --- VIEW HELPERS ---
   const toWorld = (screenX: number, screenY: number) => {
@@ -340,21 +500,22 @@ export default function ReactCircuitPro() {
 
   const handlePinClick = (compId: string, pinId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (wireStart) {
-      if (wireStart.compId === compId && wireStart.pinId === pinId) return setWireStart(null);
-      const color = getWireColor(wireStart.pinId, pinId);
-      setWires(prev => [...prev, {
-        id: Math.random().toString(36).substr(2, 9),
-        startComp: wireStart.compId, startPin: wireStart.pinId,
-        endComp: compId, endPin: pinId,
-        color: color,
-        controlOffset: 0.5,
-        axis: 'x' // Default axis
-      }]);
-      setWireStart(null);
-    } else {
-      setWireStart({ compId, pinId });
-    }
+      if (wireStart) {
+          if (wireStart.compId === compId && wireStart.pinId === pinId) return setWireStart(null);
+          const color = getWireColor(wireStart.pinId, pinId);
+          setWires(prev => [...prev, {
+            id: Math.random().toString(36).substr(2, 9),
+            startComp: wireStart.compId, startPin: wireStart.pinId,
+            endComp: compId, endPin: pinId,
+            color: color,
+            controlOffset: 0.5,
+            axis: 'x', // Default axis
+            bends: []
+          }]);
+          setWireStart(null);
+        } else {
+          setWireStart({ compId, pinId });
+        }
   };
 
   const handleCodeSelect = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
@@ -369,6 +530,7 @@ export default function ReactCircuitPro() {
 
   // --- CANVAS INTERACTIONS ---
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
+      setBendMenu(null);
       if (e.button === 1 || (e.button === 0 && e.altKey)) { 
           setIsPanning(true); 
           setLastMousePos({ x: e.clientX, y: e.clientY }); 
@@ -396,7 +558,7 @@ export default function ReactCircuitPro() {
   const handleWheel = (e: React.WheelEvent) => {
       if (e.ctrlKey || e.metaKey) {
           e.preventDefault();
-          const delta = -e.deltaY * 0.001;
+          const delta = -e.deltaY * 0.01; // much faster zoom
           const newScale = Math.min(Math.max(0.1, view.scale + delta), 5);
           const rect = canvasRef.current?.getBoundingClientRect();
           if (rect) {
@@ -425,29 +587,15 @@ export default function ReactCircuitPro() {
       if (dragWireSegment) {
           const w = wires.find(w => w.id === dragWireSegment.wireId);
           if (w) {
-              const s = getPinCoords(w.startComp, w.startPin);
-              const e = getPinCoords(w.endComp, w.endPin);
-              
-              let newOffset = w.controlOffset;
-              if (dragWireSegment.axis === 'x') {
-                  // Horizontal range
-                  const range = e.x - s.x;
-                  if (Math.abs(range) > 1) {
-                      // Project mouse X onto the range s.x -> e.x
-                      newOffset = (worldPos.x - s.x) / range;
-                  }
-              } else {
-                  // Vertical range (for Y axis wires)
-                  const range = e.y - s.y;
-                  if (Math.abs(range) > 1) {
-                      newOffset = (worldPos.y - s.y) / range;
-                  }
-              }
-              
-              // Clamp offset
-              newOffset = Math.max(0.05, Math.min(0.95, newOffset));
-              
-              setWires(prev => prev.map(wire => wire.id === w.id ? { ...wire, controlOffset: newOffset } : wire));
+              const snap = GRID_SIZE / 2;
+              const shouldSnap = !e.shiftKey;
+              const snapped = { x: Math.round(worldPos.x / snap) * snap, y: Math.round(worldPos.y / snap) * snap };
+              const target = shouldSnap ? snapped : worldPos;
+              setWireGuide(shouldSnap ? snapped : null);
+              const bends = Array.isArray(w.bends) ? [...w.bends] : (w.bend ? [w.bend] : []);
+              if (dragWireSegment.bendIndex == null) return;
+              bends[dragWireSegment.bendIndex] = target;
+              setWires(prev => prev.map(wire => wire.id === w.id ? { ...wire, bends, bend: undefined } : wire));
           }
       }
 
@@ -475,6 +623,7 @@ export default function ReactCircuitPro() {
   const handleMouseUp = () => {
       setDraggedComponent(null);
       setDragWireSegment(null);
+      setWireGuide(null);
       setIsPanning(false);
 
       if (isMouseDownOnCanvas && selectionRect) {
@@ -771,7 +920,35 @@ export default function ReactCircuitPro() {
     return { x: comp.x + pinDef.x, y: comp.y + pinDef.y };
   };
 
-  const getWirePath = (s: any, e: any, offset = 0.5, axis = 'x') => {
+  const getWirePath = (s: any, e: any, offset = 0.5, axis = 'x', bends?: {x: number; y: number}[]) => {
+      const points = [s, ...(bends || []), e];
+      // Straight segments with slight rounding only at corners
+      if (points.length >= 2) {
+        const cornerRadius = 6;
+        let d = `M ${points[0].x} ${points[0].y}`;
+        for (let i = 0; i < points.length - 1; i++) {
+          const curr = points[i];
+          const next = points[i + 1];
+          const hasCornerAhead = i < points.length - 2;
+
+          if (hasCornerAhead) {
+            const after = points[i + 2];
+            const v1 = { x: next.x - curr.x, y: next.y - curr.y };
+            const v2 = { x: after.x - next.x, y: after.y - next.y };
+            const len1 = Math.hypot(v1.x, v1.y) || 1;
+            const len2 = Math.hypot(v2.x, v2.y) || 1;
+            const r = Math.min(cornerRadius, len1 / 2, len2 / 2);
+            const pre = { x: next.x - (v1.x / len1) * r, y: next.y - (v1.y / len1) * r };
+            const post = { x: next.x + (v2.x / len2) * r, y: next.y + (v2.y / len2) * r };
+            d += ` L ${pre.x} ${pre.y}`;
+            d += ` Q ${next.x} ${next.y} ${post.x} ${post.y}`;
+          } else {
+            d += ` L ${next.x} ${next.y}`;
+          }
+        }
+        return { d, handles: points.slice(1, -1) };
+      }
+      // fallback (shouldn’t happen)
       const lead = 10; // straight lead from pins
       const sLead = axis === 'x' ? { x: s.x + (e.x > s.x ? lead : -lead), y: s.y } : { x: s.x, y: s.y + (e.y > s.y ? lead : -lead) };
       const eLead = axis === 'x' ? { x: e.x - (e.x > s.x ? lead : -lead), y: e.y } : { x: e.x, y: e.y - (e.y > s.y ? lead : -lead) };
@@ -804,7 +981,8 @@ export default function ReactCircuitPro() {
                       L ${e.x} ${e.y}`,
                   midX, midY: (sLead.y + eLead.y) / 2,
                   axis: 'x',
-                  dragRect: { x: midX - 8, y: Math.min(sLead.y, eLead.y), w: 16, h: Math.abs(eLead.y - sLead.y) } // Hit area for vertical segment
+                  dragRect: { x: midX - 8, y: Math.min(sLead.y, eLead.y), w: 16, h: Math.abs(eLead.y - sLead.y) }, // Hit area for vertical segment
+                  handle: { x: midX, y: (sLead.y + eLead.y) / 2 }
               };
           } else {
               // Y-Axis (Start -> Vertical -> Horizontal -> Vertical -> End)
@@ -831,14 +1009,15 @@ export default function ReactCircuitPro() {
                       L ${e.x} ${e.y}`,
                   midX: (sLead.x + eLead.x) / 2, midY,
                   axis: 'y',
-                  dragRect: { x: Math.min(sLead.x, eLead.x), y: midY - 8, w: Math.abs(eLead.x - sLead.x), h: 16 } // Hit area for horizontal segment
+                  dragRect: { x: Math.min(sLead.x, eLead.x), y: midY - 8, w: Math.abs(eLead.x - sLead.x), h: 16 }, // Hit area for horizontal segment
+                  handle: { x: (sLead.x + eLead.x) / 2, y: midY }
               };
           }
       }
       // Curve mode
       const dx = Math.abs(eLead.x - sLead.x);
       const cOff = Math.max(dx * 0.5, 50);
-      return { d: `M ${s.x} ${s.y} L ${sLead.x} ${sLead.y} C ${sLead.x + cOff} ${sLead.y}, ${eLead.x - cOff} ${eLead.y}, ${eLead.x} ${eLead.y} L ${e.x} ${e.y}` };
+      return { d: `M ${s.x} ${s.y} L ${sLead.x} ${sLead.y} C ${sLead.x + cOff} ${sLead.y}, ${eLead.x - cOff} ${eLead.y}, ${eLead.x} ${eLead.y} L ${e.x} ${e.y}`, handle: { x: (sLead.x + eLead.x) / 2, y: (sLead.y + eLead.y) / 2 } };
   };
 
   // --- GRID PATTERN ---
@@ -867,31 +1046,9 @@ export default function ReactCircuitPro() {
         .map((w) => (w.startComp === comp.id ? w.startPin : w.endPin))
     );
 
-    const renderPinSockets = () => (
-      <div className="absolute inset-0 pointer-events-none">
-        {typeDef.pins.map((p: any) => (
-          <div
-            key={`${comp.id}-${p.id}-hole`}
-            className="absolute flex items-center justify-center"
-            style={{
-              left: p.x - (isArduino ? 9 : 8),
-              top: p.y - (isArduino ? 9 : 10),
-              width: isArduino ? 18 : 16,
-              height: isArduino ? 16 : 12,
-            }}
-          >
-            <div
-              className={`rounded-full ${isArduino ? 'bg-gradient-to-b from-[#16181d] to-[#050607] border border-[#1f2937] shadow-[inset_0_1px_2px_rgba(255,255,255,0.06)]' : 'bg-gray-900 border border-gray-700/80'}`}
-              style={{
-                width: isArduino ? 8 : 6,
-                height: isArduino ? 8 : 6,
-                boxShadow: isArduino ? '0 0 0 2px #0f172a' : undefined,
-              }}
-            />
-          </div>
-        ))}
-      </div>
-    );
+    const renderPinSockets = () => null;
+
+    const hasSvg = !!typeDef.svg_markup;
 
     return (
       <div
@@ -914,10 +1071,15 @@ export default function ReactCircuitPro() {
 
         <div
           className={`w-full h-full relative rounded-xl overflow-hidden ${
-            typeDef.image_url ? '' : 'border border-gray-700/60 bg-gradient-to-br from-slate-800 via-slate-900 to-black shadow-[0_12px_28px_rgba(0,0,0,0.45)]'
+            typeDef.image_url || hasSvg ? '' : 'border border-gray-700/60 bg-gradient-to-br from-slate-800 via-slate-900 to-black shadow-[0_12px_28px_rgba(0,0,0,0.45)]'
           }`}
         >
-          {typeDef.image_url ? (
+          {hasSvg ? (
+            <div
+              className="absolute inset-0 pointer-events-none [&_svg]:w-full [&_svg]:h-full [&_svg]:object-contain"
+              dangerouslySetInnerHTML={{ __html: typeDef.svg_markup || '' }}
+            />
+          ) : typeDef.image_url ? (
             <img
               src={typeDef.image_url}
               className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none"
@@ -942,16 +1104,25 @@ export default function ReactCircuitPro() {
 
         {typeDef.pins.map((p: any) => {
           const isConnected = connectedPinIds.has(p.id);
+          const pinW = p.width ?? 8;
+          const pinH = p.height ?? 8;
           return (
             <div
               key={p.id}
               onClick={(e) => handlePinClick(comp.id, p.id, e)}
-              className={`absolute w-3 h-3 rounded-full transition-all duration-150 cursor-crosshair z-50 shadow-sm border ${
+              className={`absolute transition-all duration-150 cursor-crosshair z-50 ${
                 isConnected
-                  ? 'bg-emerald-400 border-emerald-700 shadow-[0_0_12px_rgba(16,185,129,0.7)] scale-110'
-                  : 'bg-gradient-to-b from-gray-700 to-black border-gray-900 hover:scale-125 hover:border-blue-400'
+                  ? 'bg-white border border-white scale-110'
+                  : 'bg-transparent border border-transparent hover:border-white hover:bg-white/30 hover:scale-110'
               }`}
-              style={{ left: p.x - 6, top: p.y - 6 }}
+              style={{
+                left: p.x - pinW / 2,
+                top: p.y - pinH / 2,
+                width: pinW,
+                height: pinH,
+                minWidth: 5,
+                minHeight: 5,
+              }}
               title={p.label}
               onMouseDown={(e) => e.stopPropagation()}
             />
@@ -962,6 +1133,7 @@ export default function ReactCircuitPro() {
   };
 
   return (
+    <>
     <div className={`flex h-screen w-full ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'} font-sans select-none transition-colors duration-300`}>
       
       {/* --- LEFT SIDEBAR (Components) --- */}
@@ -973,7 +1145,7 @@ export default function ReactCircuitPro() {
             <h1 className="font-bold text-lg bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">CircuitPro</h1>
         </div>
         
-        <div className="p-4 flex-1 overflow-y-auto grid grid-cols-2 gap-3 content-start custom-scrollbar">
+        <div className="p-4 flex-1 overflow-y-auto grid grid-cols-2 gap-3 content-start custom-scrollbar" data-tour="tour-library">
             {libraryLoading && <div className="col-span-2 text-center text-xs text-gray-500">Loading components...</div>}
             {libraryError && <div className="col-span-2 text-center text-xs text-red-400">{libraryError}</div>}
             {!libraryLoading && !libraryError && Object.values(componentLibrary).map((def) => (
@@ -1032,7 +1204,7 @@ export default function ReactCircuitPro() {
                     <ToolbarButton icon={CornerDownRight} onClick={() => setWireMode('angled')} active={wireMode==='angled'} label="Angled Wires" />
                 </div>
 
-                <div className="flex items-center gap-2 ml-2">
+                <div className="flex items-center gap-2 ml-2" data-tour="tour-toolbar">
                     <ToolbarButton icon={Grid3X3} onClick={() => setShowGrid(!showGrid)} active={showGrid} label="Toggle Grid" />
                     
                     {/* Wire Axis Toggle - Only shown if wire selected & in angled mode */}
@@ -1045,20 +1217,29 @@ export default function ReactCircuitPro() {
                     {selectedWireId && (
                       <>
                         <select
-                          value={wires.find(w => w.id === selectedWireId)?.color || '#10B981'}
+                          value={wires.find(w => w.id === selectedWireId)?.color || WIRE_COLOR_CHOICES[0].value}
                           onChange={(e) => setWires(prev => prev.map(w => w.id === selectedWireId ? { ...w, color: e.target.value } : w))}
                           className="text-xs border rounded-lg px-2 py-2 bg-white text-gray-700"
                         >
-                          <option value="#10B981">Green</option>
-                          <option value="#3B82F6">Blue</option>
-                          <option value="#EF4444">Red</option>
-                          <option value="#F59E0B">Orange</option>
-                          <option value="#8B5CF6">Purple</option>
-                          <option value="#111827">Black</option>
+                          {WIRE_COLOR_CHOICES.map(opt => (
+                            <option
+                              key={opt.value}
+                              value={opt.value}
+                              style={{ backgroundColor: opt.value, color: opt.value === '#111827' ? '#F9FAFB' : '#111827' }}
+                            >
+                              ● {opt.name}
+                            </option>
+                          ))}
                         </select>
                         <button onClick={() => {setWires(w => w.filter(x=>x.id!==selectedWireId)); setSelectedWireId(null)}} className="text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded-lg text-xs flex items-center gap-2 font-medium hover:bg-red-100 transition-colors"><Trash2 size={14}/> {t.deleteWire}</button>
                       </>
                     )}
+                    <button
+                      onClick={() => { setGuideStep(0); setShowGuide(true); }}
+                      className="px-3 py-2 rounded-lg text-xs font-medium border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
+                    >
+                      Guide
+                    </button>
                     {selectedCompIds.length > 0 && <button onClick={() => {setComponents(c => c.filter(x => !selectedCompIds.includes(x.id))); setSelectedCompIds([]);}} className="text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded-lg text-xs flex items-center gap-2 font-medium hover:bg-red-100 transition-colors"><Trash2 size={14}/> {t.deleteComponents}</button>}
                 </div>
             </div>
@@ -1076,18 +1257,19 @@ export default function ReactCircuitPro() {
                     <ToolbarButton icon={Code} onClick={() => setActiveView('code')} active={activeView === 'code'} label="Code Only" />
                 </div>
 
-                <button onClick={() => setShowAIModal(true)} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-lg hover:opacity-90 transition-all text-sm font-bold shadow-md hover:shadow-lg">
+                <button onClick={() => setShowAIModal(true)} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-lg hover:opacity-90 transition-all text-sm font-bold shadow-md hover:shadow-lg" data-tour="tour-ai">
                     <Sparkles size={16} /> AI Assistant
                 </button>
             </div>
         </div>
 
-        <div className="flex-1 flex overflow-hidden relative">
+        <div className="flex-1 flex overflow-hidden relative" style={{ overscrollBehavior: 'contain', touchAction: 'none' }}>
             {/* Canvas Area */}
             <div ref={canvasRef} 
                  className={`relative flex-1 overflow-hidden cursor-${isPanning ? 'grabbing' : 'default'}`} 
                  onMouseDown={handleCanvasMouseDown} 
                  onWheel={handleWheel}
+                 data-tour="tour-canvas"
             >
                 {/* --- INFINITE GRID BACKGROUND LAYER --- */}
                 <div className="absolute inset-0 pointer-events-none" style={{backgroundColor: darkMode ? '#111827' : '#F9FAFB'}}>
@@ -1099,7 +1281,39 @@ export default function ReactCircuitPro() {
                              )}
                         </g>
                     </svg>
-                </div>
+
+                    {/* Bend context menu */}
+                    {bendMenu && (
+                      <div
+                        className="absolute bg-white text-xs text-gray-700 border border-gray-200 rounded shadow-md z-50"
+                        style={{ left: bendMenu.x + 10, top: bendMenu.y + 10 }}
+                      >
+                        <button
+                          className="px-3 py-1 hover:bg-red-50 hover:text-red-600 w-full text-left"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setWires((prev) =>
+                              prev.map((w) => {
+                                if (w.id !== bendMenu.wireId) return w;
+                                const bends = Array.isArray(w.bends) ? [...w.bends] : [];
+                                bends.splice(bendMenu.index, 1);
+                                return { ...w, bends };
+                              })
+                            );
+                            setBendMenu(null);
+                          }}
+                        >
+                          Delete bend
+                        </button>
+                        <button
+                          className="px-3 py-1 hover:bg-gray-100 w-full text-left"
+                          onClick={() => setBendMenu(null)}
+                        >
+                          Close
+                        </button>
+                      </div>
+                    )}
+            </div>
 
                 {/* Content Container - Transformed */}
                 <div style={{transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`, width: '100%', height: '100%', position: 'absolute', transformOrigin: '0 0'}}>
@@ -1111,44 +1325,104 @@ export default function ReactCircuitPro() {
                             const s = getPinCoords(w.startComp, w.startPin);
                             const e = getPinCoords(w.endComp, w.endPin);
                             const isSelected = w.id === selectedWireId;
-                            const pathData = getWirePath(s, e, w.controlOffset, w.axis || 'x'); // Pass axis
+                            const bends = Array.isArray(w.bends) ? w.bends : (w.bend ? [w.bend] : []);
+                            const pathData = getWirePath(s, e, w.controlOffset, w.axis || 'x', bends);
                             
+                            const showHandles = isSelected && (hoveredWireId === w.id || (dragWireSegment?.wireId === w.id));
+
                             return (
-                                <g key={w.id} onClick={(ev) => { ev.stopPropagation(); setSelectedWireId(w.id); }}>
+                                <g
+                                  key={w.id}
+                                  onClick={(ev) => { ev.stopPropagation(); setSelectedWireId(w.id); }}
+                                  onMouseEnter={() => setHoveredWireId(w.id)}
+                                  onMouseLeave={() => setHoveredWireId(prev => prev === w.id ? null : prev)}
+                                >
                                     {/* Hit Area (Invisible) */}
-                                    <path d={pathData.d} stroke="transparent" strokeWidth="20" fill="none" className="pointer-events-auto cursor-pointer"/>
+                                    <path
+                                      d={pathData.d}
+                                      stroke="transparent"
+                                      strokeWidth="20"
+                                      fill="none"
+                                      className="pointer-events-auto cursor-pointer"
+                                      onMouseDown={(ev) => {
+                                        // keep single-click from adding bends
+                                        ev.stopPropagation();
+                                      }}
+                                      onDoubleClick={(ev) => {
+                                        ev.stopPropagation();
+                                        if (ev.button !== 0) return;
+                                        const rect = canvasRef.current?.getBoundingClientRect();
+                                        if (!rect) return;
+                                        const mouseX = ev.clientX - rect.left;
+                                        const mouseY = ev.clientY - rect.top;
+                                        const worldX = (mouseX - view.x) / view.scale;
+                                        const worldY = (mouseY - view.y) / view.scale;
+                                        const snap = GRID_SIZE / 2;
+                                        const snapped = { x: Math.round(worldX / snap) * snap, y: Math.round(worldY / snap) * snap };
+                                        const bends = Array.isArray(w.bends) ? [...w.bends] : (w.bend ? [w.bend] : []);
+                                        bends.push(snapped);
+                                        setWireGuide(snapped);
+                                        setWires(prev => prev.map(wire => wire.id === w.id ? { ...wire, bends, bend: undefined } : wire));
+                                        setDragWireSegment({ wireId: w.id, bendIndex: bends.length - 1 });
+                                      }}
+                                      onContextMenu={(ev) => {
+                                        ev.preventDefault();
+                                        ev.stopPropagation();
+                                      }}
+                                    />
                                     
                                     {/* Visible wire */}
-                                    <path d={pathData.d} stroke={isSelected ? '#3B82F6' : w.color} strokeWidth={isSelected ? "5" : "3"} fill="none" className="pointer-events-none shadow-sm drop-shadow-md transition-all"/>
+                                    <path
+                                      d={pathData.d}
+                                      stroke={w.color}
+                                      strokeWidth={isSelected ? "5" : "3"}
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      fill="none"
+                                      className="pointer-events-none shadow-sm drop-shadow-md transition-all"
+                                    />
                                     
-                                    {/* Draggable Segment Overlay (Angled Mode) */}
-                                    {isSelected && wireMode === 'angled' && pathData.dragRect && (
-                                        <rect 
-                                            x={pathData.dragRect.x} 
-                                            y={pathData.dragRect.y} 
-                                            width={pathData.dragRect.w} 
-                                            height={pathData.dragRect.h}
-                                            fill="transparent"
-                                            className={`pointer-events-auto ${pathData.axis === 'x' ? 'cursor-col-resize' : 'cursor-row-resize'} hover:fill-blue-500/20`}
-                                            onMouseDown={(ev) => {
-                                                ev.stopPropagation();
-                                                setDragWireSegment({ 
-                                                    wireId: w.id, 
-                                                    axis: pathData.axis as 'x'|'y', 
-                                                    initialVal: w.controlOffset || 0.5, 
-                                                    mouseStart: pathData.axis === 'x' ? ev.clientX : ev.clientY 
-                                                });
-                                            }}
-                                        />
-                                    )}
+                                    {/* Draggable bend handles */}
+                                    {isSelected && pathData.handles && pathData.handles.map((h, idx) => (
+                                      <circle
+                                        key={`${w.id}-handle-${idx}`}
+                                        cx={h.x}
+                                        cy={h.y}
+                                        r={5}
+                                        fill="rgba(59,130,246,0.25)"
+                                        stroke="#3B82F6"
+                                        strokeWidth={1}
+                                        className="cursor-move transition-opacity"
+                                        opacity={showHandles ? 1 : 0}
+                                        pointerEvents={showHandles ? 'auto' : 'none'}
+                                        onMouseDown={(ev) => {
+                                          ev.stopPropagation();
+                                          setDragWireSegment({ wireId: w.id, bendIndex: idx });
+                                          setBendMenu(null);
+                                        }}
+                                        onContextMenu={(ev) => {
+                                          ev.preventDefault();
+                                          ev.stopPropagation();
+                                          const scrX = h.x * view.scale + view.x;
+                                          const scrY = h.y * view.scale + view.y;
+                                          setBendMenu({ wireId: w.id, index: idx, x: scrX, y: scrY });
+                                        }}
+                                      />
+                                    ))}
                                 </g>
                             );
                         })}
+                        {wireGuide && (
+                          <>
+                            {wireGuide.x !== undefined && <line x1={wireGuide.x} y1={-50000} x2={wireGuide.x} y2={50000} stroke="#3B82F6" strokeDasharray="4 4" strokeWidth={0.5} className="pointer-events-none" />}
+                            {wireGuide.y !== undefined && <line x1={-50000} y1={wireGuide.y} x2={50000} y2={wireGuide.y} stroke="#3B82F6" strokeDasharray="4 4" strokeWidth={0.5} className="pointer-events-none" />}
+                          </>
+                        )}
                         {wireStart && (
-                             <line x1={getPinCoords(wireStart.compId, wireStart.pinId).x} 
-                                   y1={getPinCoords(wireStart.compId, wireStart.pinId).y} 
-                                   x2={mousePos.x}
-                                   y2={mousePos.y} 
+                            <line x1={getPinCoords(wireStart.compId, wireStart.pinId).x} 
+                                  y1={getPinCoords(wireStart.compId, wireStart.pinId).y} 
+                                  x2={mousePos.x} 
+                                  y2={mousePos.y} 
                                    stroke="#10B981" strokeWidth="2" strokeDasharray="5,5" className="opacity-60 animate-pulse"/>
                         )}
                     </svg>
@@ -1185,7 +1459,7 @@ export default function ReactCircuitPro() {
             {/* CODE EDITOR SIDEBAR */}
             <div className={`w-96 flex flex-col shadow-xl border-l z-20 transition-all duration-300
                 ${darkMode ? 'bg-[#1e1e1e] border-gray-700' : 'bg-[#1e1e1e] border-gray-800'} 
-                ${activeView === 'canvas' ? 'hidden' : ''}`}
+                ${activeView === 'canvas' ? 'hidden' : ''}`} data-tour="tour-code"
             >
                  <div className="bg-[#252526] px-4 py-2 text-xs font-bold text-blue-400 border-b border-[#333] flex justify-between items-center h-10">
                     <div className="flex items-center gap-2"><FileCode size={14}/> <span>sketch.ino</span></div>
@@ -1211,51 +1485,118 @@ export default function ReactCircuitPro() {
             </div>
         </div>
       </div>
-
-      {/* AI Modal */}
-      {showAIModal && (
-        <div className="absolute inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-            <div className="bg-white dark:bg-gray-800 w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden border border-gray-200 dark:border-gray-700">
-                <div className="bg-gray-50 dark:bg-gray-900 p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
-                    <h3 className="font-bold text-gray-800 dark:text-white flex items-center gap-2"><Sparkles className="text-blue-600" size={20}/> {t.aiTitle}</h3>
-                    <button onClick={() => setShowAIModal(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><X size={20}/></button>
-                </div>
-                {!aiResult ? (
-                    <div className="p-6">
-                        <textarea 
-                            value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} 
-                            className="w-full h-32 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg p-3 text-sm text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500" 
-                            placeholder={t.aiPlaceholder}
-                        />
-                        <div className="mt-6">
-                             <label className="block text-xs font-bold text-gray-500 uppercase mb-3">Generate Options</label>
-                             <div className="grid grid-cols-2 gap-3">
-                                 {Object.entries({circuit: t.genCircuit, code: t.genCode, flowchart: t.genFlowchart, block: t.genBlock}).map(([key, label]) => (
-                                    <label key={key} className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-                                        {/* @ts-ignore */}
-                                        <input type="checkbox" checked={genOptions[key]} onChange={e => setGenOptions({...genOptions, [key]: e.target.checked})} className="w-4 h-4 accent-blue-600 rounded"/> 
-                                        <span className="text-sm font-medium text-gray-700 dark:text-gray-200">{label}</span>
-                                    </label>
-                                 ))}
-                             </div>
-                        </div>
-                        <button onClick={handleAIGenerate} className="mt-6 w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white py-3 rounded-lg font-bold shadow-lg flex justify-center items-center gap-2 transition-all" disabled={isGeneratingAI}>
-                            {isGeneratingAI ? <Loader2 className="animate-spin"/> : <Sparkles size={18}/>} {isGeneratingAI ? t.aiGenerating : t.aiGenerate}
-                        </button>
-                    </div>
-                ) : (
-                    <div className="p-6">
-                        <p className="text-green-600 mb-4 font-bold flex items-center gap-2"><CheckSquare size={18}/> {t.aiSuccess}</p>
-                        <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-lg border border-gray-200 dark:border-gray-700 mb-6"><p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{typeof aiResult.explanation === 'string' ? aiResult.explanation : 'Success'}</p></div>
-                        <div className="flex gap-3">
-                            <button onClick={applyAICircuit} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg font-bold shadow-md transition-colors">{t.aiApply}</button>
-                            <button onClick={() => setAiResult(null)} className="px-6 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 font-medium transition-colors">{t.aiDiscard}</button>
-                        </div>
-                    </div>
-                )}
-            </div>
-        </div>
-      )}
     </div>
+
+    {showGuide && (
+      <div className="fixed inset-0 z-[200] pointer-events-none">
+        {guideRect && (
+          <div
+            style={{
+              position: 'absolute',
+              left: guideRect.x - 8,
+              top: guideRect.y - 8,
+              width: guideRect.width + 16,
+              height: guideRect.height + 16,
+              borderRadius: 12,
+              boxShadow: '0 0 0 9999px rgba(0,0,0,0.6)',
+              border: '2px solid white',
+              pointerEvents: 'none',
+              transition: 'all 0.2s ease',
+            }}
+          />
+        )}
+        <div className="fixed inset-0 flex items-center justify-center pointer-events-none">
+          <div className="pointer-events-auto w-full max-w-sm px-4">
+            <div className="bg-white shadow-2xl rounded-2xl p-5 w-full">
+              <div className="flex justify-between items-start gap-3">
+                <div>
+                  <p className="text-xs uppercase text-gray-400 font-semibold">Step {guideStep + 1} / {GUIDE_STEPS.length}</p>
+                  <h3 className="text-lg font-bold text-gray-800 mt-1">{GUIDE_STEPS[guideStep]?.title}</h3>
+                </div>
+                <button onClick={() => { setShowGuide(false); }} className="text-gray-400 hover:text-gray-600">
+                  <X size={18}/>
+                </button>
+              </div>
+              <p className="text-sm text-gray-600 mt-3">{GUIDE_STEPS[guideStep]?.body}</p>
+              <div className="mt-4 flex justify-between items-center">
+                <button
+                  onClick={() => setShowGuide(false)}
+                  className="text-sm text-gray-500 hover:text-gray-700"
+                >
+                  Skip
+                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setGuideStep(s => Math.max(0, s - 1))}
+                    className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+                    disabled={guideStep === 0}
+                  >
+                    Back
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (guideStep >= GUIDE_STEPS.length - 1) {
+                        setShowGuide(false);
+                      } else {
+                        setGuideStep(s => s + 1);
+                      }
+                    }}
+                    className="px-4 py-1.5 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+                  >
+                    {guideStep >= GUIDE_STEPS.length - 1 ? 'Finish' : 'Next'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* AI Modal */}
+    {showAIModal && (
+      <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white dark:bg-gray-800 w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden border border-gray-200 dark:border-gray-700">
+              <div className="bg-gray-50 dark:bg-gray-900 p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                  <h3 className="font-bold text-gray-800 dark:text-white flex items-center gap-2"><Sparkles className="text-blue-600" size={20}/> {t.aiTitle}</h3>
+                  <button onClick={() => setShowAIModal(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><X size={20}/></button>
+              </div>
+              {!aiResult ? (
+                  <div className="p-6">
+                      <textarea 
+                          value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} 
+                          className="w-full h-32 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg p-3 text-sm text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500" 
+                          placeholder={t.aiPlaceholder}
+                      />
+                      <div className="mt-6">
+                           <label className="block text-xs font-bold text-gray-500 uppercase mb-3">Generate Options</label>
+                           <div className="grid grid-cols-2 gap-3">
+                               {Object.entries({circuit: t.genCircuit, code: t.genCode, flowchart: t.genFlowchart, block: t.genBlock}).map(([key, label]) => (
+                                  <label key={key} className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                                      {/* @ts-ignore */}
+                                      <input type="checkbox" checked={genOptions[key]} onChange={e => setGenOptions({...genOptions, [key]: e.target.checked})} className="w-4 h-4 accent-blue-600 rounded"/> 
+                                      <span className="text-sm font-medium text-gray-700 dark:text-gray-200">{label}</span>
+                                  </label>
+                               ))}
+                           </div>
+                      </div>
+                      <button onClick={handleAIGenerate} className="mt-6 w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white py-3 rounded-lg font-bold shadow-lg flex justify-center items-center gap-2 transition-all" disabled={isGeneratingAI}>
+                          {isGeneratingAI ? <Loader2 className="animate-spin"/> : <Sparkles size={18}/>} {isGeneratingAI ? t.aiGenerating : t.aiGenerate}
+                      </button>
+                  </div>
+              ) : (
+                  <div className="p-6">
+                      <p className="text-green-600 mb-4 font-bold flex items-center gap-2"><CheckSquare size={18}/> {t.aiSuccess}</p>
+                      <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-lg border border-gray-200 dark:border-gray-700 mb-6"><p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{typeof aiResult.explanation === 'string' ? aiResult.explanation : 'Success'}</p></div>
+                      <div className="flex gap-3">
+                          <button onClick={applyAICircuit} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg font-bold shadow-md transition-colors">{t.aiApply}</button>
+                          <button onClick={() => setAiResult(null)} className="px-6 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 font-medium transition-colors">{t.aiDiscard}</button>
+                      </div>
+                  </div>
+              )}
+          </div>
+      </div>
+    )}
+  </>
   );
 }
